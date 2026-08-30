@@ -364,7 +364,7 @@ function renderProcessSnapshot(row) {
   }
 
   document.title =
-    `${row.numero_processo} — Veredicta`;
+    "Processo — Veredicta";
 
   $("processBadge").textContent =
     `FICHA PROCESSUAL · ${
@@ -705,7 +705,7 @@ function renderProcess(
     process;
 
   document.title =
-    `${process.numero_processo} — Veredicta`;
+    "Processo — Veredicta";
 
   $("processBadge")
     .textContent =
