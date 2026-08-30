@@ -1,4 +1,3 @@
 window.VEREDICTA_CONFIG = {
-  API_BASE_URL: "http://127.0.0.1:8000",
-  GOOGLE_CLIENT_ID: ""
+  API_BASE_URL: "https://veredicta-api.onrender.com"
 };
