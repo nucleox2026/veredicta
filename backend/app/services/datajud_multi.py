@@ -427,7 +427,7 @@ class DataJudMultiClient:
 
             "sort": [
                 {
-                    "@timestamp": {
+                    "dataAjuizamento": {
                         "order": "desc"
                     }
                 },
@@ -514,7 +514,21 @@ class DataJudMultiClient:
         date_to: str,
         subject_code: int = 9992,
         page_size_per_tribunal: int = 20,
+        search_after_by_tribunal: dict[
+            str,
+            list,
+        ] | None = None,
     ) -> dict:
+        """
+        Pesquisa vários tribunais em paralelo.
+
+        Cada tribunal possui seu próprio
+        cursor search_after.
+
+        Nenhum resultado é persistido
+        no banco de dados.
+        """
+
         tribunais = list(
             dict.fromkeys(
                 normalize_tribunal(t)
@@ -527,6 +541,11 @@ class DataJudMultiClient:
                 "Informe ao menos um tribunal."
             )
 
+        search_after_by_tribunal = (
+            search_after_by_tribunal
+            or {}
+        )
+
         results = []
 
         workers = min(
@@ -538,18 +557,28 @@ class DataJudMultiClient:
             max_workers=workers
         ) as executor:
 
-            futures = {
-                executor.submit(
+            futures = {}
+
+            for tribunal in tribunais:
+                cursor = (
+                    search_after_by_tribunal.get(
+                        tribunal
+                    )
+                )
+
+                future = executor.submit(
                     self.search_tribunal,
                     tribunal,
                     date_from,
                     date_to,
                     subject_code,
                     page_size_per_tribunal,
-                ): tribunal
+                    cursor,
+                )
 
-                for tribunal in tribunais
-            }
+                futures[
+                    future
+                ] = tribunal
 
             for future in as_completed(
                 futures
@@ -566,23 +595,20 @@ class DataJudMultiClient:
                 except Exception as exc:
                     result = {
                         "tribunal": tribunal,
-
                         "ok": False,
-
                         "total": 0,
-
                         "items": [],
-
-                        "next_search_after": (
-                            None
-                        ),
-
+                        "next_search_after": None,
                         "error": str(exc),
                     }
 
                 results.append(
                     result
                 )
+
+        # -----------------------------------------------------
+        # Junta os resultados
+        # -----------------------------------------------------
 
         all_items = []
 
@@ -591,6 +617,8 @@ class DataJudMultiClient:
                 result["items"]
             )
 
+        # Ordena os resultados dos vários TJs
+        # pela data de ajuizamento.
         all_items.sort(
             key=lambda item: str(
                 item.get(
@@ -601,35 +629,42 @@ class DataJudMultiClient:
             reverse=True,
         )
 
+        # -----------------------------------------------------
+        # Total informado pelo DataJud
+        # -----------------------------------------------------
+
         total_found = sum(
             result["total"]
             for result in results
             if result["ok"]
         )
 
+        # -----------------------------------------------------
+        # Erros parciais
+        # -----------------------------------------------------
+
         errors = [
             {
                 "tribunal": (
                     result["tribunal"]
                 ),
-
                 "error": (
                     result["error"]
                 ),
             }
-
             for result in results
-
             if not result["ok"]
         ]
+
+        # -----------------------------------------------------
+        # Resumo por tribunal
+        # -----------------------------------------------------
 
         summary = sorted(
             [
                 {
                     "tribunal": (
-                        result[
-                            "tribunal"
-                        ]
+                        result["tribunal"]
                     ),
 
                     "total": (
@@ -639,21 +674,52 @@ class DataJudMultiClient:
                     "ok": (
                         result["ok"]
                     ),
-                }
 
+                    "resultados_recebidos": (
+                        len(
+                            result["items"]
+                        )
+                    ),
+                }
                 for result in results
             ],
-
             key=lambda item: (
                 item["tribunal"]
             ),
         )
 
-        return {
-            "total_found": total_found,
+        # -----------------------------------------------------
+        # Próximos cursores
+        # -----------------------------------------------------
 
-            "tribunais_solicitados": len(
-                tribunais
+        next_search_after_by_tribunal = {}
+
+        for result in results:
+            tribunal = (
+                result["tribunal"]
+            )
+
+            cursor = (
+                result.get(
+                    "next_search_after"
+                )
+            )
+
+            if (
+                result["ok"]
+                and cursor
+            ):
+                next_search_after_by_tribunal[
+                    tribunal
+                ] = cursor
+
+        return {
+            "total_found": (
+                total_found
+            ),
+
+            "tribunais_solicitados": (
+                len(tribunais)
             ),
 
             "tribunais_ok": sum(
@@ -662,13 +728,23 @@ class DataJudMultiClient:
                 if result["ok"]
             ),
 
-            "tribunais_com_erro": len(
+            "tribunais_com_erro": (
+                len(errors)
+            ),
+
+            "por_tribunal": (
+                summary
+            ),
+
+            "items": (
+                all_items
+            ),
+
+            "errors": (
                 errors
             ),
 
-            "por_tribunal": summary,
-
-            "items": all_items,
-
-            "errors": errors,
+            "next_search_after_by_tribunal": (
+                next_search_after_by_tribunal
+            ),
         }

@@ -33,54 +33,63 @@ router = APIRouter(
     tags=["searches"],
 )
 
-class MultiTribunalSearchRequest(BaseModel):
-    tribunais: list[str] = Field(
-        min_length=1,
-        max_length=27,
-    )
+class MultiTribunalSearchRequest(
+        BaseModel
+    ):
+        tribunais: list[str] = Field(
+            min_length=1,
+            max_length=27,
+        )
 
-    date_from: date
-    date_to: date
+        date_from: date
 
-    subject_code: int | None = 9992
+        date_to: date
 
-    page_size_per_tribunal: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-    )
+        subject_code: int | None = 9992
 
-    @field_validator("tribunais")
-    @classmethod
-    def validate_tribunais(
-        cls,
-        value: list[str],
-    ) -> list[str]:
+        page_size_per_tribunal: int = Field(
+            default=10,
+            ge=1,
+            le=50,
+        )
 
-        normalized = []
+        search_after_by_tribunal: dict[
+            str,
+            list,
+        ] | None = None
 
-        for tribunal in value:
-            sigla = normalize_tribunal(
-                tribunal
-            )
+        @field_validator("tribunais")
+        @classmethod
+        def validate_tribunais(
+            cls,
+            value: list[str],
+        ) -> list[str]:
 
-            try:
-                get_tribunal(sigla)
+            normalized = []
 
-            except ValueError as exc:
-                raise ValueError(
-                    str(exc)
-                ) from exc
+            for tribunal in value:
+                sigla = (
+                    normalize_tribunal(
+                        tribunal
+                    )
+                )
 
-            if sigla not in normalized:
-                normalized.append(sigla)
+                try:
+                    get_tribunal(
+                        sigla
+                    )
 
-        if not normalized:
-            raise ValueError(
-                "Informe ao menos um tribunal."
-            )
+                except ValueError as exc:
+                    raise ValueError(
+                        str(exc)
+                    ) from exc
 
-        return normalized
+                if sigla not in normalized:
+                    normalized.append(
+                        sigla
+                    )
+
+            return normalized
 
 def parse_data_ajuizamento(value) -> datetime | None:
     if value is None:
@@ -113,27 +122,57 @@ async def get_available_tribunals(
 @router.post("/multi")
 def multi_tribunal_search(
     request: MultiTribunalSearchRequest,
-    _user: dict = Depends(current_user),
+
+    _user: dict = Depends(
+        current_user
+    ),
 ):
-    if request.date_from > request.date_to:
+    if (
+        request.date_from
+        > request.date_to
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
-                "A data inicial não pode ser "
-                "posterior à data final."
+                "A data inicial não pode "
+                "ser posterior à data final."
             ),
         )
 
     try:
-        client = DataJudMultiClient()
+        client = (
+            DataJudMultiClient()
+        )
 
         result = client.search_many(
-            tribunais=request.tribunais,
-            date_from=request.date_from.isoformat(),
-            date_to=request.date_to.isoformat(),
-            subject_code=request.subject_code,
+            tribunais=(
+                request.tribunais
+            ),
+
+            date_from=(
+                request
+                .date_from
+                .isoformat()
+            ),
+
+            date_to=(
+                request
+                .date_to
+                .isoformat()
+            ),
+
+            subject_code=(
+                request.subject_code
+            ),
+
             page_size_per_tribunal=(
-                request.page_size_per_tribunal
+                request
+                .page_size_per_tribunal
+            ),
+
+            search_after_by_tribunal=(
+                request
+                .search_after_by_tribunal
             ),
         )
 
@@ -149,58 +188,118 @@ def multi_tribunal_search(
             detail=str(exc),
         ) from exc
 
+    # -----------------------------------------------------
+    # Monta versão pública dos resultados.
+    #
+    # Não devolvemos raw_source porque a listagem
+    # deve continuar leve.
+    # -----------------------------------------------------
+
     public_items = []
 
     for item in result["items"]:
+
         public_items.append(
             {
-                "tribunal": item.get(
-                    "tribunal"
+                "tribunal": (
+                    item.get(
+                        "tribunal"
+                    )
                 ),
-                "numero_processo": item.get(
-                    "numero_processo"
+
+                "numero_processo": (
+                    item.get(
+                        "numero_processo"
+                    )
                 ),
-                "data_ajuizamento": item.get(
-                    "data_ajuizamento"
+
+                "data_ajuizamento": (
+                    item.get(
+                        "data_ajuizamento"
+                    )
                 ),
-                "grau": item.get(
-                    "grau"
+
+                "grau": (
+                    item.get(
+                        "grau"
+                    )
                 ),
-                "classe_nome": item.get(
-                    "classe_nome"
+
+                "classe_nome": (
+                    item.get(
+                        "classe_nome"
+                    )
                 ),
-                "orgao_julgador_nome": item.get(
-                    "orgao_julgador_nome"
+
+                "orgao_julgador_nome": (
+                    item.get(
+                        "orgao_julgador_nome"
+                    )
                 ),
-                "assuntos": item.get(
-                    "assuntos"
+
+                "assuntos": (
+                    item.get(
+                        "assuntos"
+                    )
+                    or []
                 ),
             }
         )
 
+    # IMPORTANTE:
+    # este return fica FORA do for acima.
     return {
-        "total_found": result[
-            "total_found"
-        ],
-        "tribunais_solicitados": result[
-            "tribunais_solicitados"
-        ],
-        "tribunais_ok": result[
-            "tribunais_ok"
-        ],
-        "tribunais_com_erro": result[
-            "tribunais_com_erro"
-        ],
-        "por_tribunal": result[
-            "por_tribunal"
-        ],
-        "resultados_recebidos": len(
+        "total_found": (
+            result[
+                "total_found"
+            ]
+        ),
+
+        "tribunais_solicitados": (
+            result[
+                "tribunais_solicitados"
+            ]
+        ),
+
+        "tribunais_ok": (
+            result[
+                "tribunais_ok"
+            ]
+        ),
+
+        "tribunais_com_erro": (
+            result[
+                "tribunais_com_erro"
+            ]
+        ),
+
+        "por_tribunal": (
+            result[
+                "por_tribunal"
+            ]
+        ),
+
+        "resultados_recebidos": (
+            len(
+                public_items
+            )
+        ),
+
+        "items": (
             public_items
         ),
-        "items": public_items,
-        "errors": result[
-            "errors"
-        ],
+
+        "errors": (
+            result[
+                "errors"
+            ]
+        ),
+
+        "next_search_after_by_tribunal": (
+            result[
+                "next_search_after_by_tribunal"
+            ]
+        ),
     }
 
 def save_process_page(
