@@ -36,6 +36,7 @@ class ProcessAnalysis(Base):
     __tablename__ = "process_analyses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tribunal: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     numero_processo: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     dano_moral: Mapped[str | None] = mapped_column(String(30), nullable=True)
     direito_personalidade: Mapped[str | None] = mapped_column(String(255), nullable=True)

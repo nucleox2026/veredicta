@@ -1,15 +1,35 @@
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+)
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..db import get_db
-from ..models import ProcessAnalysis, ProcessRecord
-
-from ..services.legal_ai import VeredictaLegalAI
-from ..settings import Settings, get_settings
+from ..models import (
+    ProcessAnalysis,
+    ProcessRecord,
+)
+from ..services.datajud_multi import (
+    DataJudError,
+    DataJudMultiClient,
+)
+from ..services.legal_ai import (
+    VeredictaLegalAI,
+)
+from ..services.tribunals import (
+    get_tribunal,
+    normalize_tribunal,
+)
+from ..settings import (
+    Settings,
+    get_settings,
+)
 
 
 router = APIRouter(
@@ -17,9 +37,21 @@ router = APIRouter(
     tags=["processes"],
 )
 
+
+# =========================================================
+# UTILITÁRIOS
+# =========================================================
+
+
 def extract_parties(
     raw_source: dict,
 ) -> dict:
+    """
+    Tenta extrair polos e participantes
+    quando essas informações estiverem
+    disponíveis no retorno do DataJud.
+    """
+
     result = {
         "ativo": [],
         "passivo": [],
@@ -34,16 +66,21 @@ def extract_parties(
 
     def normalize_party(
         item,
-        default_polo=None,
     ):
-        if isinstance(item, str):
+        if isinstance(
+            item,
+            str,
+        ):
             return {
                 "nome": item,
                 "documento": None,
                 "tipo_pessoa": None,
             }
 
-        if not isinstance(item, dict):
+        if not isinstance(
+            item,
+            dict,
+        ):
             return None
 
         nome = (
@@ -87,7 +124,11 @@ def extract_parties(
         "participantes": "outros",
     }
 
-    for source_key, target_key in key_map.items():
+    for (
+        source_key,
+        target_key,
+    ) in key_map.items():
+
         value = raw_source.get(
             source_key
         )
@@ -102,35 +143,335 @@ def extract_parties(
             value = [value]
 
         for item in value:
-            normalized = normalize_party(
-                item
+            normalized = (
+                normalize_party(
+                    item
+                )
             )
 
             if normalized:
-                result[target_key].append(
+                result[
+                    target_key
+                ].append(
                     normalized
                 )
 
     return result
 
+
+def compact_movements(
+    movements: list[dict],
+    limit: int = 30,
+) -> list[dict]:
+    """
+    Compacta movimentações para
+    exibição na interface.
+
+    O DataJud continua fornecendo
+    todas as movimentações para o
+    backend, mas a ficha exibe apenas
+    as mais recentes.
+    """
+
+    compacted = []
+
+    for movement in movements[:limit]:
+
+        if not isinstance(
+            movement,
+            dict,
+        ):
+            continue
+
+        orgao = (
+            movement.get(
+                "orgaoJulgador"
+            )
+            or {}
+        )
+
+        complements = []
+
+        for complemento in (
+            movement.get(
+                "complementosTabelados"
+            )
+            or []
+        ):
+            if not isinstance(
+                complemento,
+                dict,
+            ):
+                continue
+
+            complements.append(
+                {
+                    "nome": (
+                        complemento.get(
+                            "nome"
+                        )
+                    ),
+                    "descricao": (
+                        complemento.get(
+                            "descricao"
+                        )
+                    ),
+                }
+            )
+
+        compacted.append(
+            {
+                "codigo": (
+                    movement.get(
+                        "codigo"
+                    )
+                ),
+
+                "data_hora": (
+                    movement.get(
+                        "dataHora"
+                    )
+                ),
+
+                "nome": (
+                    movement.get(
+                        "nome"
+                    )
+                ),
+
+                "orgao_julgador": (
+                    orgao.get("nome")
+                    if isinstance(
+                        orgao,
+                        dict,
+                    )
+                    else None
+                ),
+
+                "complementos": (
+                    complements
+                ),
+            }
+        )
+
+    return compacted
+
+
+def normalize_process_number(
+    value: str,
+) -> str:
+    """
+    Converte número CNJ formatado
+    ou não para somente dígitos.
+    """
+
+    digits = "".join(
+        char
+        for char in str(value)
+        if char.isdigit()
+    )
+
+    if not digits:
+        raise ValueError(
+            "Número de processo inválido."
+        )
+
+    return digits
+
+
+def analysis_to_dict(
+    analysis: ProcessAnalysis,
+) -> dict:
+    """
+    Converte uma análise armazenada
+    no banco para resposta JSON.
+    """
+
+    fundamentos = (
+        analysis.fundamentos
+    )
+
+    limitacoes = []
+
+    if isinstance(
+        fundamentos,
+        dict,
+    ):
+        limitacoes = (
+            fundamentos.get(
+                "limitacoes"
+            )
+            or []
+        )
+
+        fundamentos_publicos = (
+            fundamentos.get(
+                "itens"
+            )
+            or []
+        )
+
+    else:
+        fundamentos_publicos = (
+            fundamentos
+            or []
+        )
+
+    return {
+        "id": (
+            analysis.id
+        ),
+
+        "tribunal": (
+            analysis.tribunal
+        ),
+
+        "numero_processo": (
+            analysis.numero_processo
+        ),
+
+        "dano_moral": (
+            analysis.dano_moral
+        ),
+
+        "direito_personalidade": (
+            analysis.direito_personalidade
+        ),
+
+        "empresa_re": (
+            analysis.empresa_re
+        ),
+
+        "resultado": (
+            analysis.resultado
+        ),
+
+        "valor_indenizacao_centavos": (
+            analysis
+            .valor_indenizacao_centavos
+        ),
+
+        "resumo": (
+            analysis.resumo
+        ),
+
+        "fundamentos": (
+            fundamentos_publicos
+        ),
+
+        "limitacoes": (
+            limitacoes
+        ),
+
+        "confianca": (
+            analysis.confianca
+        ),
+
+        "model_name": (
+            analysis.model_name
+        ),
+
+        "created_at": (
+            analysis.created_at
+        ),
+    }
+
+
+def get_ai_configuration(
+    settings: Settings,
+) -> tuple[str, str]:
+    """
+    Resolve chave e modelo conforme
+    o provedor configurado.
+    """
+
+    if (
+        settings.ai_provider
+        == "gemini"
+    ):
+        if not settings.gemini_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "GEMINI_API_KEY "
+                    "não configurada."
+                ),
+            )
+
+        return (
+            settings.gemini_api_key,
+            settings.gemini_model,
+        )
+
+    if (
+        settings.ai_provider
+        == "openai"
+    ):
+        if not settings.openai_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "OPENAI_API_KEY "
+                    "não configurada."
+                ),
+            )
+
+        return (
+            settings.openai_api_key,
+            settings.openai_model,
+        )
+
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            "Provedor de IA não suportado: "
+            f"{settings.ai_provider}"
+        ),
+    )
+
+
+# =========================================================
+# ROTAS ANTIGAS — PROCESSOS SALVOS
+# =========================================================
+#
+# Mantidas temporariamente para não quebrar
+# a versão anterior durante a migração.
+# =========================================================
+
+
 @router.get("")
 def list_processes(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=25, ge=1, le=100),
+    page: int = Query(
+        default=1,
+        ge=1,
+    ),
+
+    page_size: int = Query(
+        default=25,
+        ge=1,
+        le=100,
+    ),
 
     search: str | None = Query(
         default=None,
-        description="Busca por número, classe ou órgão julgador",
+        description=(
+            "Busca por número, classe "
+            "ou órgão julgador"
+        ),
     ),
 
     date_from: date | None = Query(
         default=None,
-        description="Data inicial de ajuizamento",
+        description=(
+            "Data inicial de ajuizamento"
+        ),
     ),
 
     date_to: date | None = Query(
         default=None,
-        description="Data final de ajuizamento",
+        description=(
+            "Data final de ajuizamento"
+        ),
     ),
 
     grau: str | None = Query(
@@ -140,33 +481,55 @@ def list_processes(
 
     classe: str | None = Query(
         default=None,
-        description="Parte do nome da classe processual",
+        description=(
+            "Parte do nome da "
+            "classe processual"
+        ),
     ),
 
     orgao_julgador: str | None = Query(
         default=None,
-        description="Parte do nome do órgão julgador",
+        description=(
+            "Parte do nome do "
+            "órgão julgador"
+        ),
     ),
 
-    _user: dict = Depends(current_user),
-    db: Session = Depends(get_db),
+    _user: dict = Depends(
+        current_user
+    ),
+
+    db: Session = Depends(
+        get_db
+    ),
 ):
     filters = []
 
     if search:
-        term = f"%{search.strip()}%"
+        term = (
+            f"%{search.strip()}%"
+        )
 
         filters.append(
             or_(
-                ProcessRecord.numero_processo.ilike(term),
-                ProcessRecord.classe_nome.ilike(term),
-                ProcessRecord.orgao_julgador_nome.ilike(term),
+                ProcessRecord
+                .numero_processo
+                .ilike(term),
+
+                ProcessRecord
+                .classe_nome
+                .ilike(term),
+
+                ProcessRecord
+                .orgao_julgador_nome
+                .ilike(term),
             )
         )
 
     if date_from:
         filters.append(
-            ProcessRecord.data_ajuizamento
+            ProcessRecord
+            .data_ajuizamento
             >= datetime.combine(
                 date_from,
                 time.min,
@@ -175,7 +538,8 @@ def list_processes(
 
     if date_to:
         filters.append(
-            ProcessRecord.data_ajuizamento
+            ProcessRecord
+            .data_ajuizamento
             <= datetime.combine(
                 date_to,
                 time.max,
@@ -184,41 +548,66 @@ def list_processes(
 
     if grau:
         filters.append(
-            ProcessRecord.grau == grau.strip()
+            ProcessRecord.grau
+            == grau.strip()
         )
 
     if classe:
         filters.append(
-            ProcessRecord.classe_nome.ilike(
+            ProcessRecord
+            .classe_nome
+            .ilike(
                 f"%{classe.strip()}%"
             )
         )
 
     if orgao_julgador:
         filters.append(
-            ProcessRecord.orgao_julgador_nome.ilike(
+            ProcessRecord
+            .orgao_julgador_nome
+            .ilike(
                 f"%{orgao_julgador.strip()}%"
             )
         )
 
-    query = select(ProcessRecord)
+    query = select(
+        ProcessRecord
+    )
 
     count_query = select(
-        func.count(ProcessRecord.id)
+        func.count(
+            ProcessRecord.id
+        )
     )
 
     if filters:
-        query = query.where(*filters)
-        count_query = count_query.where(*filters)
+        query = query.where(
+            *filters
+        )
 
-    total = db.scalar(count_query) or 0
+        count_query = (
+            count_query.where(
+                *filters
+            )
+        )
 
-    offset = (page - 1) * page_size
+    total = (
+        db.scalar(
+            count_query
+        )
+        or 0
+    )
+
+    offset = (
+        page - 1
+    ) * page_size
 
     records = db.scalars(
         query
         .order_by(
-            ProcessRecord.data_ajuizamento.desc()
+            ProcessRecord
+            .data_ajuizamento
+            .desc()
         )
         .offset(offset)
         .limit(page_size)
@@ -229,51 +618,764 @@ def list_processes(
     for record in records:
         items.append(
             {
-                "id": record.id,
+                "id": (
+                    record.id
+                ),
+
                 "numero_processo": (
-                    record.numero_processo
+                    record
+                    .numero_processo
                 ),
-                "tribunal": record.tribunal,
+
+                "tribunal": (
+                    record.tribunal
+                ),
+
                 "data_ajuizamento": (
-                    record.data_ajuizamento
+                    record
+                    .data_ajuizamento
                 ),
-                "grau": record.grau,
-                "classe": record.classe_nome,
+
+                "grau": (
+                    record.grau
+                ),
+
+                "classe": (
+                    record.classe_nome
+                ),
+
                 "orgao_julgador": (
-                    record.orgao_julgador_nome
+                    record
+                    .orgao_julgador_nome
                 ),
-                "assuntos": record.assuntos,
+
+                "assuntos": (
+                    record.assuntos
+                ),
             }
         )
 
     pages = (
-        (total + page_size - 1)
+        (
+            total
+            + page_size
+            - 1
+        )
         // page_size
+
         if total
         else 0
     )
 
     return {
         "total": total,
+
         "page": page,
-        "page_size": page_size,
+
+        "page_size": (
+            page_size
+        ),
+
         "pages": pages,
+
         "filters": {
             "search": search,
             "date_from": date_from,
             "date_to": date_to,
             "grau": grau,
             "classe": classe,
-            "orgao_julgador": orgao_julgador,
+            "orgao_julgador": (
+                orgao_julgador
+            ),
         },
+
         "items": items,
     }
 
-@router.get("/{process_id}")
+
+# =========================================================
+# NOVA ARQUITETURA — CONSULTA SOB DEMANDA
+# =========================================================
+
+
+@router.get(
+    "/lookup/{tribunal}/{numero_processo}"
+)
+def lookup_process(
+    tribunal: str,
+    numero_processo: str,
+
+    _user: dict = Depends(
+        current_user
+    ),
+):
+    """
+    Consulta o processo diretamente
+    no DataJud.
+
+    Não salva ProcessRecord.
+    """
+
+    sigla = normalize_tribunal(
+        tribunal
+    )
+
+    try:
+        get_tribunal(
+            sigla
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    try:
+        client = (
+            DataJudMultiClient()
+        )
+
+        result = (
+            client.get_process(
+                tribunal=sigla,
+                numero_processo=(
+                    numero_processo
+                ),
+            )
+        )
+
+    except DataJudError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    if not result["found"]:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Processo não encontrado "
+                "no DataJud."
+            ),
+        )
+
+    source = (
+        result["raw_source"]
+        or {}
+    )
+
+    classe = (
+        source.get("classe")
+        or {}
+    )
+
+    orgao = (
+        source.get(
+            "orgaoJulgador"
+        )
+        or source.get(
+            "orgao_julgador"
+        )
+        or {}
+    )
+
+    if isinstance(
+        classe,
+        dict,
+    ):
+        classe_nome = (
+            classe.get("nome")
+        )
+
+    elif isinstance(
+        classe,
+        str,
+    ):
+        classe_nome = classe
+
+    else:
+        classe_nome = None
+
+    if isinstance(
+        orgao,
+        dict,
+    ):
+        orgao_nome = (
+            orgao.get("nome")
+        )
+
+    elif isinstance(
+        orgao,
+        str,
+    ):
+        orgao_nome = orgao
+
+    else:
+        orgao_nome = None
+
+    movimentos = (
+        source.get(
+            "movimentos"
+        )
+        or []
+    )
+
+    return {
+        "id": None,
+
+        "tribunal": sigla,
+
+        "numero_processo": (
+            result[
+                "numero_processo"
+            ]
+        ),
+
+        "data_ajuizamento": (
+            source.get(
+                "dataAjuizamento"
+            )
+        ),
+
+        "grau": (
+            source.get("grau")
+        ),
+
+        "classe_nome": (
+            classe_nome
+        ),
+
+        "orgao_julgador_nome": (
+            orgao_nome
+        ),
+
+        "assuntos": (
+            source.get(
+                "assuntos"
+            )
+            or []
+        ),
+
+        "partes": (
+            extract_parties(
+                source
+            )
+        ),
+
+        "movimentos_total": (
+            len(movimentos)
+        ),
+
+        "movimentos_exibidos": (
+            min(
+                len(movimentos),
+                30,
+            )
+        ),
+
+        "movimentos": (
+            compact_movements(
+                movimentos,
+                limit=30,
+            )
+        ),
+
+        "total_ocorrencias_datajud": (
+            result[
+                "total_ocorrencias"
+            ]
+        ),
+
+        "fonte": "DataJud",
+    }
+
+
+# =========================================================
+# NOVA ARQUITETURA — CONSULTA ANÁLISE SALVA
+# =========================================================
+
+
+@router.get(
+    "/lookup/{tribunal}/{numero_processo}/analysis"
+)
+def get_lookup_process_analysis(
+    tribunal: str,
+    numero_processo: str,
+
+    _user: dict = Depends(
+        current_user
+    ),
+
+    db: Session = Depends(
+        get_db
+    ),
+):
+    """
+    Consulta somente o banco.
+
+    Não chama DataJud.
+    Não chama IA.
+    """
+
+    sigla = normalize_tribunal(
+        tribunal
+    )
+
+    try:
+        get_tribunal(
+            sigla
+        )
+
+        numero = (
+            normalize_process_number(
+                numero_processo
+            )
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    analysis = db.scalar(
+        select(
+            ProcessAnalysis
+        )
+        .where(
+            ProcessAnalysis.tribunal
+            == sigla,
+
+            ProcessAnalysis.numero_processo
+            == numero,
+        )
+    )
+
+    if not analysis:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Processo ainda "
+                "não analisado."
+            ),
+        )
+
+    return analysis_to_dict(
+        analysis
+    )
+
+
+# =========================================================
+# NOVA ARQUITETURA — ANÁLISE IA SOB DEMANDA
+# =========================================================
+
+
+@router.post(
+    "/lookup/{tribunal}/{numero_processo}/analyze"
+)
+def analyze_lookup_process(
+    tribunal: str,
+    numero_processo: str,
+
+    force: bool = Query(
+        default=False
+    ),
+
+    _user: dict = Depends(
+        current_user
+    ),
+
+    db: Session = Depends(
+        get_db
+    ),
+
+    settings: Settings = Depends(
+        get_settings
+    ),
+):
+    """
+    Analisa um processo sob demanda.
+
+    Se já existir análise e force=False:
+    retorna a análise armazenada.
+
+    Se não existir:
+    consulta DataJud, chama IA e
+    salva somente ProcessAnalysis.
+    """
+
+    # -----------------------------------------------------
+    # 1. Validação
+    # -----------------------------------------------------
+
+    sigla = normalize_tribunal(
+        tribunal
+    )
+
+    try:
+        get_tribunal(
+            sigla
+        )
+
+        numero = (
+            normalize_process_number(
+                numero_processo
+            )
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    # -----------------------------------------------------
+    # 2. Cache
+    # -----------------------------------------------------
+
+    existing = db.scalar(
+        select(
+            ProcessAnalysis
+        )
+        .where(
+            ProcessAnalysis.tribunal
+            == sigla,
+
+            ProcessAnalysis.numero_processo
+            == numero,
+        )
+    )
+
+    if (
+        existing
+        and not force
+    ):
+        return analysis_to_dict(
+            existing
+        )
+
+    # -----------------------------------------------------
+    # 3. Consulta DataJud
+    # -----------------------------------------------------
+
+    try:
+        client = (
+            DataJudMultiClient()
+        )
+
+        datajud_result = (
+            client.get_process(
+                tribunal=sigla,
+                numero_processo=numero,
+            )
+        )
+
+    except DataJudError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    if not datajud_result[
+        "found"
+    ]:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Processo não encontrado "
+                "no DataJud."
+            ),
+        )
+
+    source = (
+        datajud_result[
+            "raw_source"
+        ]
+        or {}
+    )
+
+    # -----------------------------------------------------
+    # 4. Configuração IA
+    # -----------------------------------------------------
+
+    (
+        ai_api_key,
+        ai_model,
+    ) = get_ai_configuration(
+        settings
+    )
+
+    # -----------------------------------------------------
+    # 5. Dados processuais
+    # -----------------------------------------------------
+
+    classe = (
+        source.get("classe")
+        or {}
+    )
+
+    orgao = (
+        source.get(
+            "orgaoJulgador"
+        )
+        or source.get(
+            "orgao_julgador"
+        )
+        or {}
+    )
+
+    if isinstance(
+        classe,
+        dict,
+    ):
+        classe_nome = (
+            classe.get("nome")
+        )
+
+    elif isinstance(
+        classe,
+        str,
+    ):
+        classe_nome = classe
+
+    else:
+        classe_nome = None
+
+    if isinstance(
+        orgao,
+        dict,
+    ):
+        orgao_nome = (
+            orgao.get("nome")
+        )
+
+    elif isinstance(
+        orgao,
+        str,
+    ):
+        orgao_nome = orgao
+
+    else:
+        orgao_nome = None
+
+    movimentos = (
+        source.get(
+            "movimentos"
+        )
+        or []
+    )
+
+    # -----------------------------------------------------
+    # 6. Contexto para IA
+    # -----------------------------------------------------
+
+    ai_payload = {
+        "numero_processo": (
+            numero
+        ),
+
+        "tribunal": (
+            sigla
+        ),
+
+        "data_ajuizamento": (
+            source.get(
+                "dataAjuizamento"
+            )
+        ),
+
+        "grau": (
+            source.get("grau")
+        ),
+
+        "classe": (
+            classe_nome
+        ),
+
+        "orgao_julgador": (
+            orgao_nome
+        ),
+
+        "assuntos": (
+            source.get(
+                "assuntos"
+            )
+            or []
+        ),
+
+        "partes": (
+            extract_parties(
+                source
+            )
+        ),
+
+        # A ficha mostra apenas 30,
+        # mas a IA pode receber até 100.
+        "movimentos": (
+            movimentos[:100]
+        ),
+    }
+
+    # -----------------------------------------------------
+    # 7. Executa IA
+    # -----------------------------------------------------
+
+    agent = VeredictaLegalAI(
+        api_key=ai_api_key,
+        model=ai_model,
+    )
+
+    try:
+        ai_result = (
+            agent.analyze_process(
+                ai_payload
+            )
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Falha na análise "
+                "com IA: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    # -----------------------------------------------------
+    # 8. Dados persistidos
+    # -----------------------------------------------------
+
+    values = {
+        "tribunal": (
+            sigla
+        ),
+
+        "dano_moral": (
+            ai_result.dano_moral
+        ),
+
+        "direito_personalidade": (
+            ai_result
+            .direito_personalidade
+        ),
+
+        "empresa_re": (
+            ai_result.empresa_re
+        ),
+
+        "resultado": (
+            ai_result.resultado
+        ),
+
+        "valor_indenizacao_centavos": (
+            ai_result
+            .valor_indenizacao_centavos
+        ),
+
+        "resumo": (
+            ai_result.resumo
+        ),
+
+        "fundamentos": {
+            "itens": (
+                ai_result.fundamentos
+            ),
+
+            "limitacoes": (
+                ai_result.limitacoes
+            ),
+        },
+
+        "confianca": (
+            ai_result.confianca
+        ),
+
+        "model_name": (
+            ai_model
+        ),
+    }
+
+    # -----------------------------------------------------
+    # 9. Salva SOMENTE ProcessAnalysis
+    # -----------------------------------------------------
+
+    try:
+        if existing:
+
+            for (
+                key,
+                value,
+            ) in values.items():
+
+                setattr(
+                    existing,
+                    key,
+                    value,
+                )
+
+            analysis = existing
+
+        else:
+            analysis = (
+                ProcessAnalysis(
+                    numero_processo=(
+                        numero
+                    ),
+                    **values,
+                )
+            )
+
+            db.add(
+                analysis
+            )
+
+        db.commit()
+
+        db.refresh(
+            analysis
+        )
+
+    except Exception:
+        db.rollback()
+        raise
+
+    return analysis_to_dict(
+        analysis
+    )
+
+
+# =========================================================
+# ROTAS ANTIGAS — DETALHE POR ID
+# =========================================================
+
+
+@router.get(
+    "/{process_id}"
+)
 def get_process(
     process_id: int,
-    _user: dict = Depends(current_user),
-    db: Session = Depends(get_db),
+
+    _user: dict = Depends(
+        current_user
+    ),
+
+    db: Session = Depends(
+        get_db
+    ),
 ):
     record = db.get(
         ProcessRecord,
@@ -283,7 +1385,9 @@ def get_process(
     if not record:
         raise HTTPException(
             status_code=404,
-            detail="Processo não encontrado.",
+            detail=(
+                "Processo não encontrado."
+            ),
         )
 
     raw_source = (
@@ -296,84 +1400,77 @@ def get_process(
     )
 
     return {
-        "id": record.id,
+        "id": (
+            record.id
+        ),
+
         "numero_processo": (
             record.numero_processo
         ),
-        "tribunal": record.tribunal,
+
+        "tribunal": (
+            record.tribunal
+        ),
+
         "data_ajuizamento": (
             record.data_ajuizamento
         ),
-        "grau": record.grau,
+
+        "grau": (
+            record.grau
+        ),
+
         "classe": (
             record.classe_nome
         ),
+
         "orgao_julgador": (
-            record.orgao_julgador_nome
+            record
+            .orgao_julgador_nome
         ),
+
         "assuntos": (
-            record.assuntos or []
+            record.assuntos
+            or []
         ),
-        "partes": extract_parties(
-            raw_source
+
+        "partes": (
+            extract_parties(
+                raw_source
+            )
         ),
+
         "movimentos": (
             raw_source.get(
                 "movimentos",
                 [],
             )
         ),
+
         "dados_datajud": (
             raw_source
         ),
     }
 
-def analysis_to_dict(
-    analysis: ProcessAnalysis,
-):
-    return {
-        "id":
-            analysis.id,
 
-        "numero_processo":
-            analysis.numero_processo,
+# =========================================================
+# ROTA ANTIGA — ANÁLISE POR ID
+# =========================================================
 
-        "dano_moral":
-            analysis.dano_moral,
 
-        "direito_personalidade":
-            analysis.direito_personalidade,
-
-        "empresa_re":
-            analysis.empresa_re,
-
-        "resultado":
-            analysis.resultado,
-
-        "valor_indenizacao_centavos":
-            analysis.valor_indenizacao_centavos,
-
-        "resumo":
-            analysis.resumo,
-
-        "fundamentos":
-            analysis.fundamentos,
-
-        "confianca":
-            analysis.confianca,
-
-        "model_name":
-            analysis.model_name,
-
-        "created_at":
-            analysis.created_at,
-    }
-
-@router.get("/{process_id}/analysis")
+@router.get(
+    "/{process_id}/analysis"
+)
 def get_process_analysis(
     process_id: int,
-    _user: dict = Depends(current_user),
-    db: Session = Depends(get_db),
+
+    _user: dict = Depends(
+        current_user
+    ),
+
+    db: Session = Depends(
+        get_db
+    ),
 ):
     record = db.get(
         ProcessRecord,
@@ -383,28 +1480,46 @@ def get_process_analysis(
     if not record:
         raise HTTPException(
             status_code=404,
-            detail="Processo não encontrado.",
+            detail=(
+                "Processo não encontrado."
+            ),
         )
 
     analysis = db.scalar(
-        select(ProcessAnalysis)
+        select(
+            ProcessAnalysis
+        )
         .where(
+            ProcessAnalysis.tribunal
+            == record.tribunal,
+
             ProcessAnalysis.numero_processo
-            == record.numero_processo
+            == record.numero_processo,
         )
     )
 
     if not analysis:
         raise HTTPException(
             status_code=404,
-            detail="Processo ainda não analisado.",
+            detail=(
+                "Processo ainda "
+                "não analisado."
+            ),
         )
 
     return analysis_to_dict(
         analysis
     )
 
-@router.post("/{process_id}/analyze")
+
+# =========================================================
+# ROTA ANTIGA — ANALISAR PROCESSO SALVO
+# =========================================================
+
+
+@router.post(
+    "/{process_id}/analyze"
+)
 def analyze_process(
     process_id: int,
 
@@ -412,15 +1527,22 @@ def analyze_process(
         default=False
     ),
 
-    _user: dict = Depends(current_user),
+    _user: dict = Depends(
+        current_user
+    ),
 
-    db: Session = Depends(get_db),
+    db: Session = Depends(
+        get_db
+    ),
 
     settings: Settings = Depends(
         get_settings
     ),
 ):
-    # 1. Localiza o processo
+    # -----------------------------------------------------
+    # 1. Localiza processo salvo
+    # -----------------------------------------------------
+
     record = db.get(
         ProcessRecord,
         process_id,
@@ -429,74 +1551,51 @@ def analyze_process(
     if not record:
         raise HTTPException(
             status_code=404,
-            detail="Processo não encontrado.",
+            detail=(
+                "Processo não encontrado."
+            ),
         )
 
-    # 2. Verifica se já existe análise
+    # -----------------------------------------------------
+    # 2. Procura análise
+    # -----------------------------------------------------
+
     existing = db.scalar(
-        select(ProcessAnalysis)
+        select(
+            ProcessAnalysis
+        )
         .where(
+            ProcessAnalysis.tribunal
+            == record.tribunal,
+
             ProcessAnalysis.numero_processo
-            == record.numero_processo
+            == record.numero_processo,
         )
     )
 
-    # Se já existe e force=false,
-    # devolvemos o banco sem chamar IA.
-    if existing and not force:
+    if (
+        existing
+        and not force
+    ):
         return analysis_to_dict(
             existing
         )
 
-    # 3. Escolhe o provedor de IA
-    if settings.ai_provider == "gemini":
+    # -----------------------------------------------------
+    # 3. Configuração IA
+    # -----------------------------------------------------
 
-        if not settings.gemini_api_key:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "GEMINI_API_KEY "
-                    "não configurada."
-                ),
-            )
+    (
+        ai_api_key,
+        ai_model,
+    ) = get_ai_configuration(
+        settings
+    )
 
-        ai_api_key = (
-            settings.gemini_api_key
-        )
+    # -----------------------------------------------------
+    # 4. Dados antigos armazenados
+    # -----------------------------------------------------
 
-        ai_model = (
-            settings.gemini_model
-        )
-
-    elif settings.ai_provider == "openai":
-
-        if not settings.openai_api_key:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "OPENAI_API_KEY "
-                    "não configurada."
-                ),
-            )
-
-        ai_api_key = (
-            settings.openai_api_key
-        )
-
-        ai_model = (
-            settings.openai_model
-        )
-
-    else:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Provedor de IA não suportado: "
-                f"{settings.ai_provider}"
-            ),
-        )
-
-    # 4. Prepara os dados
     raw_source = (
         record.raw_source
         if isinstance(
@@ -506,121 +1605,179 @@ def analyze_process(
         else {}
     )
 
-    movimentos = raw_source.get(
-        "movimentos",
-        [],
+    movimentos = (
+        raw_source.get(
+            "movimentos"
+        )
+        or []
     )
 
     ai_payload = {
-        "numero_processo":
-            record.numero_processo,
+        "numero_processo": (
+            record.numero_processo
+        ),
 
-        "tribunal":
-            record.tribunal,
+        "tribunal": (
+            record.tribunal
+        ),
 
-        "data_ajuizamento":
-            record.data_ajuizamento,
+        "data_ajuizamento": (
+            record.data_ajuizamento
+        ),
 
-        "grau":
-            record.grau,
+        "grau": (
+            record.grau
+        ),
 
-        "classe":
-            record.classe_nome,
+        "classe": (
+            record.classe_nome
+        ),
 
-        "orgao_julgador":
-            record.orgao_julgador_nome,
+        "orgao_julgador": (
+            record
+            .orgao_julgador_nome
+        ),
 
-        "assuntos":
-            record.assuntos or [],
+        "assuntos": (
+            record.assuntos
+            or []
+        ),
 
-        "partes":
+        "partes": (
             extract_parties(
                 raw_source
-            ),
+            )
+        ),
 
-        "movimentos":
-            movimentos[:100],
+        "movimentos": (
+            movimentos[:100]
+        ),
     }
 
-    # 5. Executa o agente
+    # -----------------------------------------------------
+    # 5. Executa IA
+    # -----------------------------------------------------
+
     agent = VeredictaLegalAI(
         api_key=ai_api_key,
         model=ai_model,
     )
 
     try:
-        result = agent.analyze_process(
-            ai_payload
+        result = (
+            agent.analyze_process(
+                ai_payload
+            )
         )
 
     except Exception as exc:
         raise HTTPException(
             status_code=502,
             detail=(
-                "Falha na análise com IA: "
+                "Falha na análise "
+                "com IA: "
                 f"{exc}"
             ),
         ) from exc
 
-    # 6. Dados que serão persistidos
+    # -----------------------------------------------------
+    # 6. Dados persistidos
+    # -----------------------------------------------------
+
     values = {
-        "dano_moral":
-            result.dano_moral,
+        "tribunal": (
+            record.tribunal
+        ),
 
-        "direito_personalidade":
-            result.direito_personalidade,
+        "dano_moral": (
+            result.dano_moral
+        ),
 
-        "empresa_re":
-            result.empresa_re,
+        "direito_personalidade": (
+            result
+            .direito_personalidade
+        ),
 
-        "resultado":
-            result.resultado,
+        "empresa_re": (
+            result.empresa_re
+        ),
 
-        "valor_indenizacao_centavos":
-            result.valor_indenizacao_centavos,
+        "resultado": (
+            result.resultado
+        ),
 
-        "resumo":
-            result.resumo,
+        "valor_indenizacao_centavos": (
+            result
+            .valor_indenizacao_centavos
+        ),
+
+        "resumo": (
+            result.resumo
+        ),
 
         "fundamentos": {
-            "itens":
-                result.fundamentos,
+            "itens": (
+                result.fundamentos
+            ),
 
-            "limitacoes":
-                result.limitacoes,
+            "limitacoes": (
+                result.limitacoes
+            ),
         },
 
-        "confianca":
-            result.confianca,
+        "confianca": (
+            result.confianca
+        ),
 
-        "model_name":
-            ai_model,
+        "model_name": (
+            ai_model
+        ),
     }
 
-    # 7. Atualiza ou cria a análise
-    if existing:
+    # -----------------------------------------------------
+    # 7. Atualiza/cria análise
+    # -----------------------------------------------------
 
-        for key, value in values.items():
-            setattr(
-                existing,
+    try:
+        if existing:
+
+            for (
                 key,
                 value,
+            ) in values.items():
+
+                setattr(
+                    existing,
+                    key,
+                    value,
+                )
+
+            analysis = existing
+
+        else:
+            analysis = (
+                ProcessAnalysis(
+                    numero_processo=(
+                        record
+                        .numero_processo
+                    ),
+                    **values,
+                )
             )
 
-        analysis = existing
+            db.add(
+                analysis
+            )
 
-    else:
-        analysis = ProcessAnalysis(
-            numero_processo=
-                record.numero_processo,
+        db.commit()
 
-            **values,
+        db.refresh(
+            analysis
         )
 
-        db.add(analysis)
-
-    db.commit()
-    db.refresh(analysis)
+    except Exception:
+        db.rollback()
+        raise
 
     return analysis_to_dict(
         analysis
