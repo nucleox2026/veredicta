@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta
+    name="description"
+    content="Veredicta — inteligência jurídica e jurimetria"
+  />
+  <title>Veredicta — Inteligência Jurídica</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <span class="eyebrow">NÚCLEO · PROGRAMA VEREDICTA</span>
+      <h1>Veredicta</h1>
+      <p class="topbar-subtitle">
+        Inteligência Jurídica e Jurimetria
+      </p>
+    </div>
+
+    <div class="auth-area">
+      <div class="backend-indicator">
+        <span class="status-dot" id="statusDot"></span>
+        <span>
+          Backend:
+          <strong id="healthStatus">verificando...</strong>
+        </span>
+      </div>
+
+      <span id="authStatus">Modo local</span>
+      <div id="googleButton"></div>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <section class="hero">
+      <div>
+        <span class="badge">TJMT · DANOS MORAIS</span>
+
+        <h2>Base de inteligência jurídica</h2>
+
+        <p>
+          Consulte os processos coletados do DataJud,
+          aplique filtros e explore a base estruturada
+          da Veredicta.
+        </p>
+      </div>
+    </section>
+
+    <section class="metrics-grid">
+
+      <article class="metric-card">
+        <span>Processos únicos</span>
+        <strong id="metricTotal">—</strong>
+        <small>Base armazenada</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Primeiro grau</span>
+        <strong id="metricG1">—</strong>
+        <small>G1</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Segundo grau</span>
+        <strong id="metricG2">—</strong>
+        <small>G2</small>
+      </article>
+
+      <article class="metric-card">
+        <span>Juizados</span>
+        <strong id="metricJE">—</strong>
+        <small>JE</small>
+      </article>
+
+    </section>
+
+    <section class="card">
+
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">
+            PESQUISA NA BASE VEREDICTA
+          </span>
+
+          <h2>Processos</h2>
+        </div>
+
+        <button
+          class="secondary"
+          id="downloadCsv"
+          type="button"
+        >
+          Exportar página CSV
+        </button>
+      </div>
+
+      <form id="filterForm" class="filter-form">
+
+        <label class="wide">
+          Busca
+          <input
+            id="search"
+            type="text"
+            placeholder="Número do processo, classe ou órgão julgador"
+          />
+        </label>
+
+        <label>
+          Data inicial
+          <input id="dateFrom" type="date" />
+        </label>
+
+        <label>
+          Data final
+          <input id="dateTo" type="date" />
+        </label>
+
+        <label>
+          Grau
+          <select id="grau">
+            <option value="">Todos</option>
+            <option value="G1">G1</option>
+            <option value="G2">G2</option>
+            <option value="JE">JE</option>
+          </select>
+        </label>
+
+        <label>
+          Classe
+          <input
+            id="classe"
+            type="text"
+            placeholder="Ex.: Procedimento Comum"
+          />
+        </label>
+
+        <label>
+          Órgão julgador
+          <input
+            id="orgaoJulgador"
+            type="text"
+            placeholder="Ex.: Cuiabá"
+          />
+        </label>
+
+        <label>
+          Registros por página
+          <select id="pageSize">
+            <option value="10">10</option>
+            <option value="25" selected>25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" id="filterButton">
+            Aplicar filtros
+          </button>
+
+          <button
+            type="button"
+            class="secondary"
+            id="clearFilters"
+          >
+            Limpar
+          </button>
+        </div>
+
+      </form>
+
+    </section>
+
+    <section class="card">
+
+      <div class="section-heading">
+
+        <div>
+          <span class="eyebrow">RESULTADOS</span>
+
+          <h2 id="resultsTitle">
+            Carregando processos...
+          </h2>
+        </div>
+
+        <div class="pagination-info">
+          <span id="pageInfo">Página —</span>
+        </div>
+
+      </div>
+
+      <div class="table-wrap">
+
+        <table>
+
+          <thead>
+            <tr>
+              <th>Processo</th>
+              <th>Ajuizamento</th>
+              <th>Grau</th>
+              <th>Classe</th>
+              <th>Órgão julgador</th>
+              <th>Assuntos</th>
+            </tr>
+          </thead>
+
+          <tbody id="resultsBody">
+          </tbody>
+
+        </table>
+
+      </div>
+
+      <div class="pagination">
+
+        <button
+          id="previousPage"
+          class="secondary"
+          type="button"
+        >
+          ← Anterior
+        </button>
+
+        <span id="paginationText">
+          Página 1
+        </span>
+
+        <button
+          id="nextPage"
+          class="secondary"
+          type="button"
+        >
+          Próxima →
+        </button>
+
+      </div>
+
+    </section>
+
+    <section
+      class="card error-card"
+      id="errorCard"
+      hidden
+    >
+      <strong>
+        Não foi possível concluir a operação.
+      </strong>
+
+      <p id="errorText"></p>
+    </section>
+
+  </main>
+
+  <script src="./config.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

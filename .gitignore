@@ -1,0 +1,42 @@
+# Ambiente virtual
+.venv/
+venv/
+
+# Variáveis secretas
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Bancos locais
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Build / cache
+dist/
+build/
+.cache/
+
+# Credenciais
+*.pem
+*.key
+credentials.json
+service-account*.json

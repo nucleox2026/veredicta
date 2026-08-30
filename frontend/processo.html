@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>Processo — Veredicta</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+
+  <header class="topbar">
+    <div>
+      <span class="eyebrow">
+        NÚCLEO · PROGRAMA VEREDICTA
+      </span>
+
+      <h1>Veredicta</h1>
+
+      <p class="topbar-subtitle">
+        Inteligência Jurídica e Jurimetria
+      </p>
+    </div>
+
+    <div class="auth-area">
+      <div class="backend-indicator">
+        <span
+          class="status-dot"
+          id="statusDot"
+        ></span>
+
+        <span>
+          Backend:
+          <strong id="healthStatus">
+            verificando...
+          </strong>
+        </span>
+      </div>
+    </div>
+  </header>
+
+
+  <main class="layout">
+
+    <section class="process-navigation">
+
+      <a
+        href="./index.html"
+        class="back-link"
+      >
+        ← Voltar para processos
+      </a>
+
+    </section>
+
+
+    <section class="hero">
+
+      <div>
+
+        <span class="badge">
+          FICHA PROCESSUAL · TJMT
+        </span>
+
+        <h2 id="processNumber">
+          Carregando processo...
+        </h2>
+
+        <p id="processSubtitle">
+          Consultando a base da Veredicta.
+        </p>
+
+      </div>
+
+    </section>
+
+
+    <section class="process-summary-grid">
+
+      <article class="metric-card">
+        <span>Tribunal</span>
+        <strong
+          id="processTribunal"
+          class="detail-value"
+        >
+          —
+        </strong>
+      </article>
+
+      <article class="metric-card">
+        <span>Grau</span>
+        <strong
+          id="processGrade"
+          class="detail-value"
+        >
+          —
+        </strong>
+      </article>
+
+      <article class="metric-card">
+        <span>Ajuizamento</span>
+        <strong
+          id="processDate"
+          class="detail-value"
+        >
+          —
+        </strong>
+      </article>
+
+      <article class="metric-card">
+        <span>Movimentos</span>
+        <strong
+          id="movementCount"
+          class="detail-value"
+        >
+          —
+        </strong>
+      </article>
+
+    </section>
+
+
+    <section class="card">
+
+      <div class="section-heading">
+
+        <div>
+
+          <span class="eyebrow">
+            DADOS PROCESSUAIS
+          </span>
+
+          <h2>Informações gerais</h2>
+
+        </div>
+
+      </div>
+
+      <div class="detail-section">
+        
+        <span class="detail-label">
+            Partes identificadas
+          </span>
+
+          <div class="parties-grid">
+
+            <div class="party-box">
+
+              <strong>
+                Polo ativo
+              </strong>
+
+              <div id="activeParties">
+                —
+              </div>
+
+            </div>
+
+
+            <div class="party-box">
+
+              <strong>
+                Polo passivo
+              </strong>
+
+              <div id="passiveParties">
+                —
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+            <div class="detail-grid">
+
+              <div class="detail-field">
+                <span>Classe</span>
+                <strong id="processClass">
+                  —
+                </strong>
+              </div>
+
+              <div class="detail-field">
+                <span>Órgão julgador</span>
+                <strong id="processCourt">
+                  —
+                </strong>
+              </div>
+
+            </div>
+
+
+            <div class="detail-section">
+
+              <span class="detail-label">
+                Assuntos
+              </span>
+
+              <div
+                id="subjectsList"
+                class="subject-list"
+              >
+              </div>
+
+            </div>
+
+          </section>
+
+
+    <section class="card">
+
+      <div class="section-heading">
+
+        <div>
+          <span class="eyebrow">
+            VEREDICTA IA
+          </span>
+
+          <h2>Análise jurídica</h2>
+        </div>
+
+        <span
+          class="coming-badge"
+          id="analysisStatus"
+        >
+          Não analisado
+        </span>
+
+      </div>
+
+
+      <div
+        class="ai-empty-state"
+        id="analysisEmpty"
+      >
+
+        <div>
+          <strong>
+            Este processo ainda não possui
+            análise armazenada.
+          </strong>
+
+          <p>
+            O agente Veredicta irá interpretar
+            os dados processuais disponíveis
+            e produzir uma análise estruturada.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          id="analyzeButton"
+        >
+          Analisar com IA
+        </button>
+
+      </div>
+
+
+      <div
+        id="analysisLoading"
+        class="ai-loading"
+        hidden
+      >
+
+        <strong>
+          Analisando processo...
+        </strong>
+
+        <p>
+          A Veredicta está analisando os dados
+          jurídicos disponíveis.
+        </p>
+
+      </div>
+
+
+      <div
+        id="analysisContent"
+        hidden
+      >
+
+        <div class="analysis-grid">
+
+          <article class="analysis-item">
+            <span>Dano moral</span>
+            <strong id="analysisMoral">—</strong>
+          </article>
+
+
+          <article class="analysis-item">
+            <span>
+              Direito da personalidade
+            </span>
+            <strong id="analysisPersonality">—</strong>
+          </article>
+
+
+          <article class="analysis-item">
+            <span>Empresa ré</span>
+            <strong id="analysisCompany">—</strong>
+          </article>
+
+
+          <article class="analysis-item">
+            <span>Resultado</span>
+            <strong id="analysisResult">—</strong>
+          </article>
+
+
+          <article class="analysis-item">
+            <span>Valor identificado</span>
+            <strong id="analysisValue">—</strong>
+          </article>
+
+
+          <article class="analysis-item">
+            <span>Confiança</span>
+            <strong id="analysisConfidence">—</strong>
+          </article>
+
+        </div>
+
+
+        <div class="analysis-text">
+
+          <span class="detail-label">
+            Resumo jurídico
+          </span>
+
+          <p id="analysisSummary"></p>
+
+        </div>
+
+
+        <div class="analysis-columns">
+
+          <div>
+            <span class="detail-label">
+              Fundamentos identificados
+            </span>
+
+            <ul
+              id="analysisFoundations"
+              class="analysis-list"
+            ></ul>
+          </div>
+
+
+          <div>
+            <span class="detail-label">
+              Limitações da análise
+            </span>
+
+            <ul
+              id="analysisLimitations"
+              class="analysis-list"
+            ></ul>
+          </div>
+
+        </div>
+
+
+        <div class="analysis-footer">
+
+          <span id="analysisModel"></span>
+
+          <button
+            type="button"
+            class="secondary"
+            id="reanalyzeButton"
+          >
+            Analisar novamente
+          </button>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <section class="card">
+
+      <div class="section-heading">
+
+        <div>
+
+          <span class="eyebrow">
+            HISTÓRICO PROCESSUAL
+          </span>
+
+          <h2>Movimentações</h2>
+
+        </div>
+
+      </div>
+
+
+      <div
+        id="movementsList"
+        class="timeline"
+      >
+        <p>Carregando...</p>
+      </div>
+
+    </section>
+
+
+    <section
+      class="card error-card"
+      id="errorCard"
+      hidden
+    >
+
+      <strong>
+        Não foi possível carregar o processo.
+      </strong>
+
+      <p id="errorText"></p>
+
+    </section>
+
+  </main>
+
+
+  <script src="./config.js"></script>
+  <script src="./processo.js"></script>
+
+</body>
+</html>
