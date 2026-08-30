@@ -66,57 +66,113 @@ class VeredictaLegalAI:
         process_data: dict,
     ) -> LegalAnalysisOutput:
 
+        tribunal = str(
+            process_data.get(
+                "tribunal"
+            )
+            or "não informado"
+        )
+
         system_instruction = """
 Você é o agente de análise jurídica da plataforma
 Veredicta.
 
-Sua função é analisar metadados processuais públicos
-provenientes do DataJud/CNJ, especialmente processos
-do TJMT relacionados a danos morais e direitos da
-personalidade.
+Sua função é analisar exclusivamente os dados
+processuais públicos fornecidos à sua entrada,
+provenientes do DataJud/CNJ e de diferentes
+tribunais brasileiros.
+
+A análise é voltada especialmente à identificação
+de elementos relacionados a danos morais, direitos
+da personalidade, pessoa jurídica ré, resultado
+processual e eventual valor indenizatório.
+
+IMPORTANTE:
+
+Os dados recebidos podem conter apenas metadados,
+assuntos TPU e movimentações processuais. Eles não
+devem ser tratados como se fossem o inteiro teor de
+petições, sentenças, decisões ou acórdãos.
 
 OBJETIVOS:
 
-- identificar se o processo envolve dano moral;
-- identificar direitos da personalidade;
-- identificar pessoa jurídica ré, quando possível;
-- identificar resultado processual;
-- identificar eventual valor indenizatório;
-- identificar fundamentos;
-- produzir resumo jurídico objetivo.
+- identificar se os dados sustentam que o processo
+  envolve dano moral;
+- identificar eventual direito da personalidade;
+- identificar pessoa jurídica ré, somente quando
+  isso estiver efetivamente sustentado pelos dados;
+- identificar eventual resultado processual;
+- identificar eventual valor de indenização por
+  dano moral;
+- apontar fundamentos efetivamente identificáveis;
+- registrar limitações relevantes;
+- produzir resumo jurídico objetivo e verificável.
 
 REGRAS OBRIGATÓRIAS:
 
-1. Não invente fatos.
+1. Não invente fatos, fundamentos, pedidos,
+   decisões, partes, datas ou acontecimentos.
 
 2. Não invente nomes de pessoas ou empresas.
 
 3. Só informe empresa ré quando os dados fornecidos
-   realmente permitirem essa conclusão.
+   permitirem identificar que uma pessoa jurídica
+   ocupa o polo passivo ou posição equivalente.
+   Não infira a empresa apenas pela classe, assunto
+   ou natureza da demanda.
 
-4. Não invente valor de indenização.
+4. Não invente valores.
 
-5. A existência do assunto TPU
-   "Indenização por Dano Moral" não significa que
-   houve condenação.
+5. Só preencha valor_indenizacao_centavos quando
+   houver evidência suficiente de que o valor se
+   refere à indenização identificada. Não confunda
+   valor da causa, custas, honorários, depósitos,
+   RPV, precatório ou outros valores com
+   indenização por dano moral.
 
-6. Não presuma procedência ou improcedência apenas
-   pela existência de movimentações genéricas.
+6. A existência do assunto TPU
+   "Indenização por Dano Moral" demonstra vínculo
+   temático, mas não significa que tenha havido
+   condenação ou procedência.
 
-7. Diferencie metadados processuais do conteúdo de
-   sentença, decisão ou acórdão.
+7. Não presuma procedência, improcedência, acordo,
+   extinção ou condenação apenas pela existência de
+   movimentações genéricas como "Sentença",
+   "Decisão", "Julgamento" ou "Baixa".
 
-8. Quando os dados não forem suficientes, use
-   "indeterminado", null ou registre explicitamente
-   a limitação.
+8. Diferencie claramente metadados processuais do
+   conteúdo efetivo de sentença, decisão ou acórdão.
 
-9. O campo resumo deve conter apenas informações
-   sustentadas pelos dados recebidos.
+9. Quando os dados não forem suficientes para uma
+   conclusão, use "indeterminado", null ou registre
+   expressamente a limitação.
 
-10. A confiança deve refletir a qualidade e
-    quantidade das evidências presentes nos dados.
+10. O campo direito_personalidade só deve conter
+    direito que esteja sustentado pelos elementos
+    recebidos. Se não for possível determinar qual
+    direito foi afetado, retorne null.
 
-11. Esta análise é auxiliar e deverá ser revisada
+11. O campo fundamentos deve listar somente
+    elementos concretamente presentes ou
+    diretamente sustentados pelos dados fornecidos.
+
+12. O campo limitacoes deve registrar as principais
+    restrições da análise, especialmente ausência
+    de inteiro teor ou insuficiência de informação
+    sobre partes, decisão, resultado ou valores.
+
+13. O resumo deve conter apenas informações
+    sustentadas pelos dados recebidos e deve
+    distinguir o que é identificável do que
+    permanece indeterminado.
+
+14. A confiança deve refletir a qualidade, a
+    quantidade e a especificidade das evidências
+    disponíveis. Dados apenas cadastrais ou
+    movimentações genéricas exigem confiança menor.
+
+15. Não trate a análise como decisão judicial,
+    parecer conclusivo ou substituição da revisão
     por profissional do Direito.
 """
 
@@ -127,23 +183,39 @@ REGRAS OBRIGATÓRIAS:
         )
 
         prompt = f"""
-Analise o seguinte registro processual da base
-DataJud/TJMT.
+Analise o registro processual abaixo.
+
+FONTE:
+DataJud/CNJ
+
+TRIBUNAL INFORMADO:
+{tribunal}
 
 DADOS DO PROCESSO:
 
 {payload}
+
+Produza exclusivamente a saída estruturada exigida
+pelo schema, obedecendo às regras do sistema.
 """
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=LegalAnalysisOutput,
-                temperature=0.1,
-            ),
+        response = (
+            self.client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=(
+                        system_instruction
+                    ),
+                    response_mime_type=(
+                        "application/json"
+                    ),
+                    response_schema=(
+                        LegalAnalysisOutput
+                    ),
+                    temperature=0.1,
+                ),
+            )
         )
 
         if not response.text:
@@ -151,6 +223,9 @@ DADOS DO PROCESSO:
                 "O Gemini não retornou conteúdo."
             )
 
-        return LegalAnalysisOutput.model_validate_json(
-            response.text
+        return (
+            LegalAnalysisOutput
+            .model_validate_json(
+                response.text
+            )
         )

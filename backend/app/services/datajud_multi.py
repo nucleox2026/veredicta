@@ -245,10 +245,43 @@ class DataJudMultiClient:
             ],
         }
 
-        data = self._post(
-            tribunal,
-            payload,
-        )
+        try:
+            data = self._post(
+                tribunal,
+                payload,
+            )
+
+        except DataJudError as exc:
+            # Alguns aliases podem não aceitar a ordenação
+            # por @timestamp. A busca por período já usa
+            # dataAjuizamento com sucesso, então fazemos uma
+            # única tentativa de fallback apenas para erro de sort.
+            detail = str(exc).lower()
+
+            if (
+                "@timestamp" not in detail
+                and "sort" not in detail
+            ):
+                raise
+
+            fallback_payload = dict(payload)
+            fallback_payload["sort"] = [
+                {
+                    "dataAjuizamento": {
+                        "order": "desc"
+                    }
+                },
+                {
+                    "id.keyword": {
+                        "order": "asc"
+                    }
+                },
+            ]
+
+            data = self._post(
+                tribunal,
+                fallback_payload,
+            )
 
         hits_data = (
             data.get("hits")
@@ -276,14 +309,21 @@ class DataJudMultiClient:
             }
 
         sources = [
-            hit.get("_source") or {}
+            source
             for hit in hits
+            for source in [
+                hit.get("_source") or {}
+            ]
+            if isinstance(source, dict)
         ]
 
-        # Usa a ocorrência mais recente
-        # como base.
-        primary_source = dict(
-            sources[0]
+        # Usa a ocorrência mais recente como base.
+        # Se o DataJud devolver um hit sem _source válido,
+        # mantemos uma estrutura vazia em vez de gerar 500.
+        primary_source = (
+            dict(sources[0])
+            if sources
+            else {}
         )
 
         # Junta movimentações de eventuais
@@ -293,10 +333,32 @@ class DataJudMultiClient:
         movimentos_vistos = set()
 
         for source in sources:
-            for movimento in (
+            source_movements = (
                 source.get("movimentos")
                 or []
+            )
+
+            if isinstance(
+                source_movements,
+                dict,
             ):
+                source_movements = [
+                    source_movements
+                ]
+
+            if not isinstance(
+                source_movements,
+                list,
+            ):
+                continue
+
+            for movimento in source_movements:
+                if not isinstance(
+                    movimento,
+                    dict,
+                ):
+                    continue
+
                 try:
                     movement_key = json.dumps(
                         movimento,
@@ -326,6 +388,12 @@ class DataJudMultiClient:
         def movement_date(
             movimento: dict,
         ) -> str:
+            if not isinstance(
+                movimento,
+                dict,
+            ):
+                return ""
+
             return str(
                 movimento.get("dataHora")
                 or movimento.get("data")

@@ -1,28 +1,120 @@
 const CONFIG =
   window.VEREDICTA_CONFIG || {};
 
-const API = (
+const API = String(
   CONFIG.API_BASE_URL ||
   "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
+const SELECTED_PROCESS_KEY =
+  "veredicta_selected_process_v3";
+
+let authToken =
+  sessionStorage.getItem(
+    "veredicta_google_token"
+  ) || "";
+
+let currentProcessRef = null;
+let currentProcess = null;
 
 const $ = (id) =>
   document.getElementById(id);
 
 
+function authHeaders() {
+  if (!authToken) {
+    return {};
+  }
+
+  return {
+    Authorization:
+      `Bearer ${authToken}`
+  };
+}
+
+
+async function parseJsonResponse(
+  response
+) {
+  try {
+    return await response.json();
+  } catch (_) {
+    return {};
+  }
+}
+
+
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+  return String(
+    value == null
+      ? ""
+      : value
+  )
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+
+function normalizeProcessNumber(
+  value
+) {
+  return String(
+    value || ""
+  ).replace(/\D/g, "");
+}
+
+
+function getProcessReference() {
+  const params =
+    new URLSearchParams(
+      window.location.search
+    );
+
+  const tribunal = String(
+    params.get("tribunal") || ""
+  )
+    .trim()
+    .toUpperCase();
+
+  const numero =
+    normalizeProcessNumber(
+      params.get("numero")
+    );
+
+  if (!tribunal || !numero) {
+    return null;
+  }
+
+  return {
+    tribunal,
+    numero
+  };
+}
+
+
+function processBaseUrl() {
+  if (!currentProcessRef) {
+    throw new Error(
+      "Referência do processo não informada."
+    );
+  }
+
+  return (
+    `${API}/api/v1/processes/lookup/` +
+    `${encodeURIComponent(
+      currentProcessRef.tribunal
+    )}/` +
+    `${encodeURIComponent(
+      currentProcessRef.numero
+    )}`
+  );
 }
 
 
 function formatDate(value) {
-
   if (!value) {
     return "—";
   }
@@ -30,51 +122,144 @@ function formatDate(value) {
   const text =
     String(value);
 
-  const datePart =
-    text.slice(0, 10);
+  if (/^\d{8,14}$/.test(text)) {
+    const year =
+      text.slice(0, 4);
 
-  const parts =
-    datePart.split("-");
+    const month =
+      text.slice(4, 6);
 
-  if (parts.length !== 3) {
-    return text;
+    const day =
+      text.slice(6, 8);
+
+    return (
+      `${day}/${month}/${year}`
+    );
   }
 
-  return (
-    `${parts[2]}/` +
-    `${parts[1]}/` +
-    `${parts[0]}`
-  );
+  if (
+    /^\d{4}-\d{2}-\d{2}/
+      .test(text)
+  ) {
+    return (
+      `${text.slice(8, 10)}/` +
+      `${text.slice(5, 7)}/` +
+      `${text.slice(0, 4)}`
+    );
+  }
+
+  return text;
 }
 
 
-function formatMovementDate(value) {
-
+function formatDateTime(value) {
   if (!value) {
     return "Data não informada";
   }
 
+  const text =
+    String(value);
+
+  if (/^\d{14}$/.test(text)) {
+    const date =
+      formatDate(text);
+
+    const hour =
+      text.slice(8, 10);
+
+    const minute =
+      text.slice(10, 12);
+
+    return (
+      `${date} · ${hour}:${minute}`
+    );
+  }
+
+  if (/^\d{8}$/.test(text)) {
+    return formatDate(text);
+  }
+
   const date =
-    new Date(value);
+    new Date(text);
 
   if (
-    Number.isNaN(
+    !Number.isNaN(
       date.getTime()
     )
   ) {
-    return value;
+    return date.toLocaleString(
+      "pt-BR"
+    );
   }
 
-  return date.toLocaleString(
-    "pt-BR"
+  return text;
+}
+
+
+function formatMoneyFromCents(
+  cents
+) {
+  if (
+    cents === null ||
+    cents === undefined
+  ) {
+    return "Não identificado";
+  }
+
+  const value =
+    Number(cents);
+
+  if (!Number.isFinite(value)) {
+    return "Não identificado";
+  }
+
+  return (
+    value / 100
+  ).toLocaleString(
+    "pt-BR",
+    {
+      style: "currency",
+      currency: "BRL"
+    }
   );
 }
 
 
+function friendlyValue(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return "Não identificado";
+  }
+
+  const labels = {
+    sim: "Sim",
+    nao: "Não",
+    indeterminado: "Indeterminado",
+    procedente: "Procedente",
+    improcedente: "Improcedente",
+    parcialmente_procedente:
+      "Parcialmente procedente",
+    extinto: "Extinto",
+    acordo: "Acordo"
+  };
+
+  const key =
+    String(value);
+
+  if (labels[key]) {
+    return labels[key];
+  }
+
+  return key
+    .replace(/_/g, " ");
+}
+
+
 async function checkHealth() {
-
   try {
-
     const response =
       await fetch(
         `${API}/health`
@@ -85,75 +270,188 @@ async function checkHealth() {
     }
 
     const payload =
-      await response.json();
+      await parseJsonResponse(
+        response
+      );
 
     $("healthStatus")
       .textContent =
       payload.status === "ok"
         ? "online"
-        : payload.status;
+        : (
+          payload.status ||
+          "online"
+        );
 
     $("statusDot")
       .classList
       .add("online");
 
-  } catch {
-
+  } catch (_) {
     $("healthStatus")
       .textContent =
       "offline";
+
+    $("statusDot")
+      .classList
+      .remove("online");
   }
 }
 
 
-function getProcessId() {
+function showError(message) {
+  $("errorText")
+    .textContent =
+    message ||
+    "Erro inesperado.";
 
-  const params =
-    new URLSearchParams(
-      window.location.search
+  $("errorCard")
+    .hidden = false;
+}
+
+
+function clearError() {
+  $("errorCard")
+    .hidden = true;
+
+  $("errorText")
+    .textContent = "";
+}
+
+
+
+function readSelectedProcess() {
+  try {
+    const raw =
+      sessionStorage.getItem(SELECTED_PROCESS_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const row = JSON.parse(raw);
+
+    if (!row || typeof row !== "object") {
+      return null;
+    }
+
+    const tribunal = String(row.tribunal || "")
+      .trim()
+      .toUpperCase();
+
+    const numero = normalizeProcessNumber(
+      row.numero_processo
     );
 
-  return params.get("id");
+    if (
+      !currentProcessRef ||
+      tribunal !== currentProcessRef.tribunal ||
+      numero !== currentProcessRef.numero
+    ) {
+      return null;
+    }
+
+    return row;
+  } catch (_) {
+    return null;
+  }
+}
+
+
+function renderProcessSnapshot(row) {
+  if (!row) {
+    return;
+  }
+
+  document.title =
+    `${row.numero_processo} — Veredicta`;
+
+  $("processBadge").textContent =
+    `FICHA PROCESSUAL · ${
+      row.tribunal || currentProcessRef.tribunal
+    }`;
+
+  $("processNumber").textContent =
+    row.numero_processo || currentProcessRef.numero;
+
+  const classe =
+    row.classe_nome || row.classe || "Processo";
+
+  const orgao =
+    row.orgao_julgador_nome ||
+    row.orgao_julgador ||
+    row.tribunal ||
+    "DataJud";
+
+  $("processSubtitle").textContent =
+    `${classe} · ${orgao}`;
+
+  $("processTribunal").textContent =
+    row.tribunal || currentProcessRef.tribunal;
+
+  $("processGrade").textContent =
+    row.grau || "—";
+
+  $("processDate").textContent =
+    formatDate(row.data_ajuizamento);
+
+  $("processClass").textContent = classe;
+  $("processCourt").textContent = orgao;
+
+  renderSubjects(row.assuntos || []);
+
+  $("movementCount").textContent = "…";
+  $("movementCountNote").textContent =
+    "Consultando DataJud";
+  $("movementMeta").textContent =
+    "Carregando os detalhes e o histórico processual.";
 }
 
 
 function renderSubjects(
-  subjects = []
+  subjects
 ) {
+  const safeSubjects =
+    Array.isArray(subjects)
+      ? subjects
+      : [];
 
-  if (!subjects.length) {
-
+  if (!safeSubjects.length) {
     $("subjectsList")
-      .innerHTML =
-      `<span class="subject-chip">
-        Nenhum assunto informado
-      </span>`;
+      .innerHTML = `
+        <span class="subject-chip muted-chip">
+          Nenhum assunto informado
+        </span>
+      `;
 
     return;
   }
 
   $("subjectsList")
     .innerHTML =
-    subjects
+    safeSubjects
       .map(
         (subject) => `
           <span class="subject-chip">
-
-            ${escapeHtml(
-              subject.nome ||
-              subject.codigo
-            )}
+            <span>
+              ${escapeHtml(
+                subject.nome ||
+                subject.codigo ||
+                "Assunto"
+              )}
+            </span>
 
             ${
               subject.codigo
-                ? `<small>
+                ? `
+                  <small>
                     TPU ${escapeHtml(
                       subject.codigo
                     )}
-                  </small>`
+                  </small>
+                `
                 : ""
             }
-
           </span>
         `
       )
@@ -161,100 +459,22 @@ function renderSubjects(
 }
 
 
-function renderMovements(
-  movements = []
-) {
-
-  $("movementCount")
-    .textContent =
-    movements.length
-      .toLocaleString("pt-BR");
-
-
-  if (!movements.length) {
-
-    $("movementsList")
-      .innerHTML =
-      "<p>Nenhuma movimentação encontrada.</p>";
-
-    return;
-  }
-
-
-  const sorted =
-    [...movements]
-      .sort(
-        (a, b) =>
-          new Date(
-            b.dataHora || 0
-          ) -
-          new Date(
-            a.dataHora || 0
-          )
-      );
-
-
-  $("movementsList")
-    .innerHTML =
-    sorted
-      .map(
-        (movement) => `
-
-          <article class="timeline-item">
-
-            <div class="timeline-dot">
-            </div>
-
-            <div class="timeline-content">
-
-              <span class="timeline-date">
-                ${escapeHtml(
-                  formatMovementDate(
-                    movement.dataHora
-                  )
-                )}
-              </span>
-
-              <strong>
-                ${escapeHtml(
-                  movement.nome ||
-                  "Movimentação"
-                )}
-              </strong>
-
-              ${
-                movement.codigo
-                  ? `
-                    <small>
-                      Código:
-                      ${escapeHtml(
-                        movement.codigo
-                      )}
-                    </small>
-                  `
-                  : ""
-              }
-
-            </div>
-
-          </article>
-
-        `
-      )
-      .join("");
-}
-
 function renderPartyGroup(
   elementId,
-  parties = []
+  parties
 ) {
   const element =
     $(elementId);
 
-  if (!parties.length) {
+  const safeParties =
+    Array.isArray(parties)
+      ? parties
+      : [];
+
+  if (!safeParties.length) {
     element.innerHTML = `
       <span class="party-empty">
-        Não identificado
+        Não identificado no DataJud
       </span>
     `;
 
@@ -262,11 +482,10 @@ function renderPartyGroup(
   }
 
   element.innerHTML =
-    parties
+    safeParties
       .map(
         (party) => `
           <div class="party-item">
-
             <strong>
               ${escapeHtml(
                 party.nome ||
@@ -297,42 +516,232 @@ function renderPartyGroup(
                 `
                 : ""
             }
-
           </div>
         `
       )
       .join("");
 }
 
+
+function renderMovementComplements(
+  complements
+) {
+  const safeComplements =
+    Array.isArray(complements)
+      ? complements
+      : [];
+
+  if (!safeComplements.length) {
+    return "";
+  }
+
+  const items =
+    safeComplements
+      .map((item) => {
+        const text =
+          item.descricao ||
+          item.nome;
+
+        if (!text) {
+          return "";
+        }
+
+        return `
+          <span class="movement-complement">
+            ${escapeHtml(text)}
+          </span>
+        `;
+      })
+      .filter(Boolean)
+      .join("");
+
+  if (!items) {
+    return "";
+  }
+
+  return `
+    <div class="movement-complements">
+      ${items}
+    </div>
+  `;
+}
+
+
+function renderMovements(
+  process
+) {
+  const movements =
+    Array.isArray(
+      process.movimentos
+    )
+      ? process.movimentos
+      : [];
+
+  const total =
+    Number(
+      process.movimentos_total
+    );
+
+  const displayed =
+    Number(
+      process.movimentos_exibidos
+    );
+
+  const safeTotal =
+    Number.isFinite(total)
+      ? total
+      : movements.length;
+
+  const safeDisplayed =
+    Number.isFinite(displayed)
+      ? displayed
+      : movements.length;
+
+  $("movementCount")
+    .textContent =
+    safeTotal.toLocaleString(
+      "pt-BR"
+    );
+
+  if (
+    safeTotal >
+    safeDisplayed
+  ) {
+    $("movementCountNote")
+      .textContent =
+      `${safeDisplayed} mais recentes exibidos`;
+
+    $("movementMeta")
+      .textContent =
+      `Exibindo os ${safeDisplayed} movimentos mais recentes de ${safeTotal} informados pelo DataJud.`;
+
+  } else {
+    $("movementCountNote")
+      .textContent =
+      "Histórico disponível";
+
+    $("movementMeta")
+      .textContent =
+      `${safeDisplayed} movimentação(ões) disponível(is) no DataJud.`;
+  }
+
+  if (!movements.length) {
+    $("movementsList")
+      .innerHTML = `
+        <div class="empty-panel">
+          Nenhuma movimentação encontrada.
+        </div>
+      `;
+
+    return;
+  }
+
+  $("movementsList")
+    .innerHTML =
+    movements
+      .map(
+        (movement) => `
+          <article class="timeline-item">
+            <div class="timeline-dot"></div>
+
+            <div class="timeline-content">
+              <span class="timeline-date">
+                ${escapeHtml(
+                  formatDateTime(
+                    movement.data_hora ||
+                    movement.dataHora
+                  )
+                )}
+              </span>
+
+              <strong>
+                ${escapeHtml(
+                  movement.nome ||
+                  "Movimentação"
+                )}
+              </strong>
+
+              <div class="movement-meta-row">
+                ${
+                  movement.codigo
+                    ? `
+                      <small>
+                        Código ${escapeHtml(
+                          movement.codigo
+                        )}
+                      </small>
+                    `
+                    : ""
+                }
+
+                ${
+                  movement.orgao_julgador
+                    ? `
+                      <small>
+                        ${escapeHtml(
+                          movement.orgao_julgador
+                        )}
+                      </small>
+                    `
+                    : ""
+                }
+              </div>
+
+              ${renderMovementComplements(
+                movement.complementos
+              )}
+            </div>
+          </article>
+        `
+      )
+      .join("");
+}
+
+
 function renderProcess(
   process
 ) {
+  currentProcess =
+    process;
 
   document.title =
     `${process.numero_processo} — Veredicta`;
 
+  $("processBadge")
+    .textContent =
+    `FICHA PROCESSUAL · ${
+      process.tribunal || ""
+    }`;
+
   $("processNumber")
     .textContent =
-    process.numero_processo;
+    process.numero_processo ||
+    currentProcessRef.numero;
 
+  const classe =
+    process.classe_nome ||
+    process.classe ||
+    "Processo";
+
+  const orgao =
+    process.orgao_julgador_nome ||
+    process.orgao_julgador ||
+    process.tribunal ||
+    "DataJud";
 
   $("processSubtitle")
     .textContent =
-    `${process.classe || "Processo"} · ${
-      process.orgao_julgador ||
-      process.tribunal
-    }`;
-
+    `${classe} · ${orgao}`;
 
   $("processTribunal")
     .textContent =
-    process.tribunal || "—";
-
+    process.tribunal ||
+    currentProcessRef.tribunal ||
+    "—";
 
   $("processGrade")
     .textContent =
     process.grau || "—";
-
 
   $("processDate")
     .textContent =
@@ -340,137 +749,112 @@ function renderProcess(
       process.data_ajuizamento
     );
 
-
   $("processClass")
     .textContent =
-    process.classe || "—";
-
+    classe;
 
   $("processCourt")
     .textContent =
-    process.orgao_julgador || "—";
-
+    orgao;
 
   renderSubjects(
-    process.assuntos || []
+    process.assuntos
   );
 
   const parties =
-  process.partes || {};
+    process.partes &&
+    typeof process.partes === "object"
+      ? process.partes
+      : {};
 
   renderPartyGroup(
     "activeParties",
-    parties.ativo || []
+    parties.ativo
   );
 
   renderPartyGroup(
     "passiveParties",
-    parties.passivo || []
+    parties.passivo
   );
 
   renderMovements(
-    process.movimentos || []
+    process
   );
-}
-
-
-function showError(message) {
-
-  $("errorText")
-    .textContent =
-    message;
-
-  $("errorCard")
-    .hidden = false;
 }
 
 
 async function loadProcess() {
-
-  const id =
-    getProcessId();
-
-
-  if (!id) {
-
+  if (!currentProcessRef) {
     showError(
-      "Nenhum processo foi informado."
+      "A URL não contém tribunal e número de processo válidos."
     );
 
-    return;
+    $("processNumber")
+      .textContent =
+      "Processo não informado";
+
+    $("processSubtitle")
+      .textContent =
+      "Volte para a pesquisa e selecione um processo.";
+
+    return false;
   }
 
+  clearError();
 
   try {
-
     const response =
       await fetch(
-        `${API}/api/v1/processes/${id}`
+        processBaseUrl(),
+        {
+          headers:
+            authHeaders()
+        }
       );
 
-
     const payload =
-      await response
-        .json()
-        .catch(
-          () => ({})
-        );
-
+      await parseJsonResponse(
+        response
+      );
 
     if (!response.ok) {
-
       throw new Error(
         payload.detail ||
         `Erro HTTP ${response.status}`
       );
     }
 
-
     renderProcess(
       payload
     );
 
+    return true;
 
   } catch (error) {
-
     showError(
-      error.message ||
-      "Erro inesperado."
+      `Não foi possível carregar os detalhes do processo no DataJud: ${
+        error.message || "erro inesperado"
+      }. Endpoint consultado: ${processBaseUrl()}`
     );
+
+    $("movementCountNote")
+      .textContent =
+      "Detalhes indisponíveis";
+
+    $("movementMeta")
+      .textContent =
+      "Os dados resumidos da pesquisa foram preservados acima.";
+
+    $("movementsList")
+      .innerHTML = `
+        <div class="empty-panel">
+          Tente atualizar a página para consultar
+          novamente os detalhes no DataJud.
+        </div>
+      `;
+
+    return false;
   }
-}
-
-function formatMoneyFromCents(cents) {
-  if (
-    cents === null ||
-    cents === undefined
-  ) {
-    return "Não identificado";
-  }
-
-  return (
-    Number(cents) / 100
-  ).toLocaleString(
-    "pt-BR",
-    {
-      style: "currency",
-      currency: "BRL",
-    }
-  );
-}
-
-
-function friendlyValue(value) {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    return "Não identificado";
-  }
-
-  return String(value)
-    .replaceAll("_", " ");
 }
 
 
@@ -478,12 +862,15 @@ function renderList(
   elementId,
   values
 ) {
-  const element = $(elementId);
+  const element =
+    $(elementId);
 
-  if (
-    !values ||
-    !values.length
-  ) {
+  const safeValues =
+    Array.isArray(values)
+      ? values
+      : [];
+
+  if (!safeValues.length) {
     element.innerHTML = `
       <li>
         Nenhuma informação identificada.
@@ -493,75 +880,109 @@ function renderList(
     return;
   }
 
-  element.innerHTML = values
-    .map(
-      (value) => `
-        <li>
-          ${escapeHtml(value)}
-        </li>
-      `
-    )
-    .join("");
+  element.innerHTML =
+    safeValues
+      .map(
+        (value) => `
+          <li>
+            ${escapeHtml(value)}
+          </li>
+        `
+      )
+      .join("");
 }
 
 
-function renderAnalysis(analysis) {
-  $("analysisEmpty").hidden = true;
-  $("analysisLoading").hidden = true;
-  $("analysisContent").hidden = false;
+function showAnalysisEmpty() {
+  $("analysisEmpty")
+    .hidden = false;
 
-  $("analysisStatus").textContent =
+  $("analysisLoading")
+    .hidden = true;
+
+  $("analysisContent")
+    .hidden = true;
+
+  $("analysisStatus")
+    .textContent =
+    "Não analisado";
+}
+
+
+function renderAnalysis(
+  analysis
+) {
+  $("analysisEmpty")
+    .hidden = true;
+
+  $("analysisLoading")
+    .hidden = true;
+
+  $("analysisContent")
+    .hidden = false;
+
+  $("analysisStatus")
+    .textContent =
     "Analisado";
 
-  $("analysisMoral").textContent =
+  $("analysisMoral")
+    .textContent =
     friendlyValue(
       analysis.dano_moral
     );
 
-  $("analysisPersonality").textContent =
+  $("analysisPersonality")
+    .textContent =
     friendlyValue(
-      analysis.direito_personalidade
+      analysis
+        .direito_personalidade
     );
 
-  $("analysisCompany").textContent =
+  $("analysisCompany")
+    .textContent =
     friendlyValue(
       analysis.empresa_re
     );
 
-  $("analysisResult").textContent =
+  $("analysisResult")
+    .textContent =
     friendlyValue(
       analysis.resultado
     );
 
-  $("analysisValue").textContent =
+  $("analysisValue")
+    .textContent =
     formatMoneyFromCents(
-      analysis.valor_indenizacao_centavos
+      analysis
+        .valor_indenizacao_centavos
     );
 
-  $("analysisConfidence").textContent =
-    analysis.confianca !== null &&
-    analysis.confianca !== undefined
+  $("analysisConfidence")
+    .textContent =
+    (
+      analysis.confianca !== null &&
+      analysis.confianca !== undefined
+    )
       ? `${analysis.confianca}%`
       : "—";
 
-  $("analysisSummary").textContent =
+  $("analysisSummary")
+    .textContent =
     analysis.resumo ||
     "Resumo não disponível.";
 
-  const fundamentos =
-    analysis.fundamentos || {};
-
   renderList(
     "analysisFoundations",
-    fundamentos.itens || []
+    analysis.fundamentos
   );
 
   renderList(
     "analysisLimitations",
-    fundamentos.limitacoes || []
+    analysis.limitacoes
   );
 
-  $("analysisModel").textContent =
+  $("analysisModel")
+    .textContent =
     analysis.model_name
       ? `Modelo: ${analysis.model_name}`
       : "";
@@ -569,31 +990,35 @@ function renderAnalysis(analysis) {
 
 
 async function loadExistingAnalysis() {
-  const id = getProcessId();
-
-  if (!id) {
+  if (!currentProcessRef) {
     return;
   }
 
+  $("analysisStatus")
+    .textContent =
+    "Verificando...";
+
   try {
-    const response = await fetch(
-      `${API}/api/v1/processes/${id}/analysis`
-    );
+    const response =
+      await fetch(
+        `${processBaseUrl()}/analysis`,
+        {
+          headers:
+            authHeaders()
+        }
+      );
 
-    if (response.status === 404) {
-      $("analysisEmpty").hidden = false;
-      $("analysisLoading").hidden = true;
-      $("analysisContent").hidden = true;
-
-      $("analysisStatus").textContent =
-        "Não analisado";
-
+    if (
+      response.status === 404
+    ) {
+      showAnalysisEmpty();
       return;
     }
 
-    const payload = await response
-      .json()
-      .catch(() => ({}));
+    const payload =
+      await parseJsonResponse(
+        response
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -602,54 +1027,79 @@ async function loadExistingAnalysis() {
       );
     }
 
-    renderAnalysis(payload);
+    renderAnalysis(
+      payload
+    );
 
   } catch (error) {
     console.error(
       "Erro ao carregar análise:",
       error
     );
+
+    showAnalysisEmpty();
   }
 }
 
 
 async function runAnalysis(
-  force = false
+  force
 ) {
-  const id = getProcessId();
+  if (
+    !currentProcessRef ||
+    !currentProcess
+  ) {
+    showError(
+      "Carregue o processo antes de solicitar a análise."
+    );
 
-  if (!id) {
     return;
   }
 
   clearError();
 
-  $("analysisEmpty").hidden = true;
-  $("analysisContent").hidden = true;
-  $("analysisLoading").hidden = false;
+  $("analysisEmpty")
+    .hidden = true;
 
-  $("analysisStatus").textContent =
+  $("analysisContent")
+    .hidden = true;
+
+  $("analysisLoading")
+    .hidden = false;
+
+  $("analysisStatus")
+    .textContent =
     "Analisando...";
+
+  $("analyzeButton")
+    .disabled = true;
+
+  $("reanalyzeButton")
+    .disabled = true;
 
   try {
     const url =
-      `${API}/api/v1/processes/${id}/analyze` +
-      (
+      `${processBaseUrl()}/analyze` +
+      `?force=${
         force
-          ? "?force=true"
-          : ""
+          ? "true"
+          : "false"
+      }`;
+
+    const response =
+      await fetch(
+        url,
+        {
+          method: "POST",
+          headers:
+            authHeaders()
+        }
       );
 
-    const response = await fetch(
-      url,
-      {
-        method: "POST",
-      }
-    );
-
-    const payload = await response
-      .json()
-      .catch(() => ({}));
+    const payload =
+      await parseJsonResponse(
+        response
+      );
 
     if (!response.ok) {
       throw new Error(
@@ -658,54 +1108,107 @@ async function runAnalysis(
       );
     }
 
-    renderAnalysis(payload);
+    renderAnalysis(
+      payload
+    );
 
   } catch (error) {
-    $("analysisLoading").hidden = true;
-    $("analysisEmpty").hidden = false;
+    $("analysisLoading")
+      .hidden = true;
 
-    $("analysisStatus").textContent =
+    $("analysisStatus")
+      .textContent =
       "Erro";
+
+    showAnalysisEmpty();
 
     showError(
       error.message ||
-      "Erro durante análise."
+      "Erro durante a análise."
     );
+
+  } finally {
+    $("analyzeButton")
+      .disabled = false;
+
+    $("reanalyzeButton")
+      .disabled = false;
   }
 }
 
 
-$("analyzeButton")
-  .addEventListener(
-    "click",
-    () => {
-      runAnalysis(false);
-    }
-  );
-
-
-$("reanalyzeButton")
-  .addEventListener(
-    "click",
-    () => {
-      const confirmed =
-        window.confirm(
-          "Deseja executar uma nova análise com IA?"
-        );
-
-      if (confirmed) {
-        runAnalysis(true);
+function bindEvents() {
+  $("analyzeButton")
+    .addEventListener(
+      "click",
+      () => {
+        runAnalysis(false);
       }
-    }
-  );
+    );
 
-function clearError() {
-  $("errorCard").hidden = true;
-  $("errorText").textContent = "";
+  $("reanalyzeButton")
+    .addEventListener(
+      "click",
+      () => {
+        const confirmed =
+          window.confirm(
+            "Deseja executar uma nova análise com IA? Isso fará uma nova chamada ao provedor."
+          );
+
+        if (confirmed) {
+          runAnalysis(true);
+        }
+      }
+    );
 }
 
-checkHealth();
 
-loadProcess();
+async function initializePage() {
+  bindEvents();
+  checkHealth();
 
-loadExistingAnalysis();
+  currentProcessRef =
+    getProcessReference();
+
+  if (currentProcessRef) {
+    $("processBadge").textContent =
+      `FICHA PROCESSUAL · ${currentProcessRef.tribunal}`;
+
+    $("processNumber").textContent =
+      currentProcessRef.numero;
+
+    $("processTribunal").textContent =
+      currentProcessRef.tribunal;
+  }
+
+  const snapshot =
+    readSelectedProcess();
+
+  if (snapshot) {
+    renderProcessSnapshot(snapshot);
+  }
+
+  const loaded =
+    await loadProcess();
+
+  // A análise armazenada pode ser exibida mesmo se
+  // a consulta de detalhe ao DataJud falhar.
+  await loadExistingAnalysis();
+
+  if (!loaded) {
+    $("analyzeButton").disabled = true;
+
+    if ($("analysisContent").hidden) {
+      $("analysisStatus").textContent =
+        "Detalhe indisponível";
+
+      $("analysisEmpty").hidden = true;
+    }
+  }
+}
+
+
+document.addEventListener(
+  "DOMContentLoaded",
+  initializePage
+);

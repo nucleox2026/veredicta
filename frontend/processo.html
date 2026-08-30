@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta
+    name="description"
+    content="Ficha processual — Veredicta"
+  />
 
   <title>Processo — Veredicta</title>
 
@@ -45,23 +49,22 @@
   <main class="layout">
 
     <section class="process-navigation">
-
       <a
         href="./index.html"
         class="back-link"
       >
-        ← Voltar para processos
+        ← Voltar para a pesquisa
       </a>
-
     </section>
 
 
-    <section class="hero">
-
+    <section class="hero process-hero">
       <div>
-
-        <span class="badge">
-          FICHA PROCESSUAL · TJMT
+        <span
+          class="badge"
+          id="processBadge"
+        >
+          FICHA PROCESSUAL
         </span>
 
         <h2 id="processNumber">
@@ -69,11 +72,14 @@
         </h2>
 
         <p id="processSubtitle">
-          Consultando a base da Veredicta.
+          Consultando o DataJud.
         </p>
-
       </div>
 
+      <div class="source-pill">
+        <span>Fonte</span>
+        <strong>DataJud / CNJ</strong>
+      </div>
     </section>
 
 
@@ -87,6 +93,7 @@
         >
           —
         </strong>
+        <small>Tribunal consultado</small>
       </article>
 
       <article class="metric-card">
@@ -97,6 +104,7 @@
         >
           —
         </strong>
+        <small>Instância informada</small>
       </article>
 
       <article class="metric-card">
@@ -107,6 +115,7 @@
         >
           —
         </strong>
+        <small>Data informada pelo DataJud</small>
       </article>
 
       <article class="metric-card">
@@ -117,6 +126,9 @@
         >
           —
         </strong>
+        <small id="movementCountNote">
+          Histórico disponível
+        </small>
       </article>
 
     </section>
@@ -125,96 +137,81 @@
     <section class="card">
 
       <div class="section-heading">
-
         <div>
-
           <span class="eyebrow">
             DADOS PROCESSUAIS
           </span>
 
           <h2>Informações gerais</h2>
-
         </div>
-
       </div>
 
-      <div class="detail-section">
-        
-        <span class="detail-label">
-            Partes identificadas
-          </span>
 
-          <div class="parties-grid">
-
-            <div class="party-box">
-
-              <strong>
-                Polo ativo
-              </strong>
-
-              <div id="activeParties">
-                —
-              </div>
-
-            </div>
-
-
-            <div class="party-box">
-
-              <strong>
-                Polo passivo
-              </strong>
-
-              <div id="passiveParties">
-                —
-              </div>
-
-            </div>
-
-          </div>
-
+      <div class="detail-grid">
+        <div class="detail-field">
+          <span>Classe</span>
+          <strong id="processClass">
+            —
+          </strong>
         </div>
 
-            <div class="detail-grid">
+        <div class="detail-field">
+          <span>Órgão julgador</span>
+          <strong id="processCourt">
+            —
+          </strong>
+        </div>
+      </div>
 
-              <div class="detail-field">
-                <span>Classe</span>
-                <strong id="processClass">
-                  —
-                </strong>
-              </div>
 
-              <div class="detail-field">
-                <span>Órgão julgador</span>
-                <strong id="processCourt">
-                  —
-                </strong>
-              </div>
+      <div class="detail-section">
+        <span class="detail-label">
+          Assuntos
+        </span>
 
+        <div
+          id="subjectsList"
+          class="subject-list"
+        ></div>
+      </div>
+
+
+      <div class="detail-section">
+        <span class="detail-label">
+          Partes identificadas
+        </span>
+
+        <div class="parties-grid">
+          <div class="party-box">
+            <strong>Polo ativo</strong>
+            <div id="activeParties">
+              —
             </div>
+          </div>
 
-
-            <div class="detail-section">
-
-              <span class="detail-label">
-                Assuntos
-              </span>
-
-              <div
-                id="subjectsList"
-                class="subject-list"
-              >
-              </div>
-
+          <div class="party-box">
+            <strong>Polo passivo</strong>
+            <div id="passiveParties">
+              —
             </div>
+          </div>
+        </div>
 
-          </section>
+        <p
+          id="partyNotice"
+          class="muted-note"
+        >
+          A identificação das partes depende dos dados
+          disponibilizados pelo DataJud.
+        </p>
+      </div>
+
+    </section>
 
 
     <section class="card">
 
       <div class="section-heading">
-
         <div>
           <span class="eyebrow">
             VEREDICTA IA
@@ -227,27 +224,26 @@
           class="coming-badge"
           id="analysisStatus"
         >
-          Não analisado
+          Verificando...
         </span>
-
       </div>
 
 
       <div
         class="ai-empty-state"
         id="analysisEmpty"
+        hidden
       >
-
         <div>
           <strong>
-            Este processo ainda não possui
-            análise armazenada.
+            Este processo ainda não possui análise armazenada.
           </strong>
 
           <p>
-            O agente Veredicta irá interpretar
-            os dados processuais disponíveis
-            e produzir uma análise estruturada.
+            A IA somente será acionada quando você clicar no botão abaixo.
+            A análise utiliza os metadados e as movimentações disponíveis
+            no DataJud e pode ter limitações quando o inteiro teor das
+            decisões não estiver disponível.
           </p>
         </div>
 
@@ -257,7 +253,6 @@
         >
           Analisar com IA
         </button>
-
       </div>
 
 
@@ -266,16 +261,18 @@
         class="ai-loading"
         hidden
       >
+        <div class="loading-dot"></div>
 
-        <strong>
-          Analisando processo...
-        </strong>
+        <div>
+          <strong>
+            Analisando processo...
+          </strong>
 
-        <p>
-          A Veredicta está analisando os dados
-          jurídicos disponíveis.
-        </p>
-
+          <p>
+            Consultando os dados processuais e executando
+            a análise solicitada.
+          </p>
+        </div>
       </div>
 
 
@@ -291,32 +288,25 @@
             <strong id="analysisMoral">—</strong>
           </article>
 
-
           <article class="analysis-item">
-            <span>
-              Direito da personalidade
-            </span>
+            <span>Direito da personalidade</span>
             <strong id="analysisPersonality">—</strong>
           </article>
-
 
           <article class="analysis-item">
             <span>Empresa ré</span>
             <strong id="analysisCompany">—</strong>
           </article>
 
-
           <article class="analysis-item">
             <span>Resultado</span>
             <strong id="analysisResult">—</strong>
           </article>
 
-
           <article class="analysis-item">
             <span>Valor identificado</span>
             <strong id="analysisValue">—</strong>
           </article>
-
 
           <article class="analysis-item">
             <span>Confiança</span>
@@ -327,19 +317,17 @@
 
 
         <div class="analysis-text">
-
           <span class="detail-label">
             Resumo jurídico
           </span>
 
           <p id="analysisSummary"></p>
-
         </div>
 
 
         <div class="analysis-columns">
 
-          <div>
+          <div class="analysis-column-card">
             <span class="detail-label">
               Fundamentos identificados
             </span>
@@ -351,7 +339,7 @@
           </div>
 
 
-          <div>
+          <div class="analysis-column-card">
             <span class="detail-label">
               Limitações da análise
             </span>
@@ -366,7 +354,6 @@
 
 
         <div class="analysis-footer">
-
           <span id="analysisModel"></span>
 
           <button
@@ -376,7 +363,6 @@
           >
             Analisar novamente
           </button>
-
         </div>
 
       </div>
@@ -387,17 +373,20 @@
     <section class="card">
 
       <div class="section-heading">
-
         <div>
-
           <span class="eyebrow">
             HISTÓRICO PROCESSUAL
           </span>
 
           <h2>Movimentações</h2>
 
+          <p
+            id="movementMeta"
+            class="section-description"
+          >
+            Carregando histórico...
+          </p>
         </div>
-
       </div>
 
 
@@ -405,7 +394,8 @@
         id="movementsList"
         class="timeline"
       >
-        <p>Carregando...</p>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line short"></div>
       </div>
 
     </section>
@@ -416,13 +406,11 @@
       id="errorCard"
       hidden
     >
-
       <strong>
-        Não foi possível carregar o processo.
+        Não foi possível concluir a operação.
       </strong>
 
       <p id="errorText"></p>
-
     </section>
 
   </main>

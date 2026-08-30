@@ -39,14 +39,15 @@
 
     <section class="hero">
       <div>
-        <span class="badge">TJMT · DANOS MORAIS</span>
+        <span class="badge">DATAJUD · TRIBUNAIS ESTADUAIS</span>
 
-        <h2>Base de inteligência jurídica</h2>
+        <h2>Pesquisa jurídica multi-tribunal</h2>
 
         <p>
-          Consulte os processos coletados do DataJud,
-          aplique filtros e explore a base estruturada
-          da Veredicta.
+          Pesquise processos diretamente no DataJud, em um ou vários
+          Tribunais de Justiça, sem pré-carregar ou gravar os resultados
+          da pesquisa. A análise por IA ocorre somente quando solicitada
+          na ficha individual do processo.
         </p>
       </div>
     </section>
@@ -54,27 +55,27 @@
     <section class="metrics-grid">
 
       <article class="metric-card">
-        <span>Processos únicos</span>
+        <span>Registros encontrados</span>
         <strong id="metricTotal">—</strong>
-        <small>Base armazenada</small>
+        <small>Total informado pelo DataJud</small>
       </article>
 
       <article class="metric-card">
-        <span>Primeiro grau</span>
-        <strong id="metricG1">—</strong>
-        <small>G1</small>
+        <span>Tribunais consultados</span>
+        <strong id="metricTribunals">—</strong>
+        <small>Consultas concluídas com sucesso</small>
       </article>
 
       <article class="metric-card">
-        <span>Segundo grau</span>
-        <strong id="metricG2">—</strong>
-        <small>G2</small>
+        <span>Resultados carregados</span>
+        <strong id="metricLoaded">—</strong>
+        <small>Registros atualmente exibidos</small>
       </article>
 
       <article class="metric-card">
-        <span>Juizados</span>
-        <strong id="metricJE">—</strong>
-        <small>JE</small>
+        <span>Falhas</span>
+        <strong id="metricErrors">—</strong>
+        <small>Na consulta mais recente</small>
       </article>
 
     </section>
@@ -83,162 +84,103 @@
 
       <div class="section-heading">
         <div>
-          <span class="eyebrow">
-            PESQUISA NA BASE VEREDICTA
-          </span>
-
-          <h2>Processos</h2>
+          <span class="eyebrow">PESQUISA NO DATAJUD</span>
+          <h2>Nova pesquisa</h2>
         </div>
-
-        <button
-          class="secondary"
-          id="downloadCsv"
-          type="button"
-        >
-          Exportar página CSV
-        </button>
       </div>
 
-      <form id="filterForm" class="filter-form">
+      <form id="searchForm" class="filter-form">
 
-        <label class="wide">
-          Busca
-          <input
-            id="search"
-            type="text"
-            placeholder="Número do processo, classe ou órgão julgador"
-          />
-        </label>
+        <div class="wide">
+          <div class="section-heading tribunal-heading">
+            <div>
+              <label>Tribunais</label>
+              <small id="tribunalSelectionInfo">
+                Carregando tribunais...
+              </small>
+            </div>
+
+            <div class="form-actions compact-actions">
+              <button
+                type="button"
+                class="secondary"
+                id="selectAllTribunals"
+              >
+                Selecionar todos
+              </button>
+
+              <button
+                type="button"
+                class="secondary"
+                id="clearTribunals"
+              >
+                Limpar seleção
+              </button>
+            </div>
+          </div>
+
+          <div
+            id="tribunalList"
+            class="tribunal-grid"
+            aria-live="polite"
+          ></div>
+        </div>
 
         <label>
           Data inicial
-          <input id="dateFrom" type="date" />
+          <input
+            id="dateFrom"
+            type="date"
+            required
+          />
         </label>
 
         <label>
           Data final
-          <input id="dateTo" type="date" />
+          <input
+            id="dateTo"
+            type="date"
+            required
+          />
         </label>
 
         <label>
-          Grau
-          <select id="grau">
-            <option value="">Todos</option>
-            <option value="G1">G1</option>
-            <option value="G2">G2</option>
-            <option value="JE">JE</option>
+          Assunto
+          <select id="subjectCode">
+            <option value="9992" selected>
+              Indenização por Dano Moral (9992)
+            </option>
           </select>
         </label>
 
         <label>
-          Classe
-          <input
-            id="classe"
-            type="text"
-            placeholder="Ex.: Procedimento Comum"
-          />
-        </label>
-
-        <label>
-          Órgão julgador
-          <input
-            id="orgaoJulgador"
-            type="text"
-            placeholder="Ex.: Cuiabá"
-          />
-        </label>
-
-        <label>
-          Registros por página
-          <select id="pageSize">
-            <option value="10">10</option>
-            <option value="25" selected>25</option>
+          Resultados por tribunal
+          <select id="pageSizePerTribunal">
+            <option value="5">5</option>
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
             <option value="50">50</option>
-            <option value="100">100</option>
           </select>
         </label>
 
-        <div class="form-actions">
-          <button type="submit" id="filterButton">
-            Aplicar filtros
+        <div class="form-actions wide">
+          <button
+            type="submit"
+            id="searchButton"
+          >
+            Pesquisar
           </button>
 
           <button
             type="button"
             class="secondary"
-            id="clearFilters"
+            id="clearSearch"
           >
-            Limpar
+            Limpar pesquisa
           </button>
         </div>
 
       </form>
-
-    </section>
-
-    <section class="card">
-
-      <div class="section-heading">
-
-        <div>
-          <span class="eyebrow">RESULTADOS</span>
-
-          <h2 id="resultsTitle">
-            Carregando processos...
-          </h2>
-        </div>
-
-        <div class="pagination-info">
-          <span id="pageInfo">Página —</span>
-        </div>
-
-      </div>
-
-      <div class="table-wrap">
-
-        <table>
-
-          <thead>
-            <tr>
-              <th>Processo</th>
-              <th>Ajuizamento</th>
-              <th>Grau</th>
-              <th>Classe</th>
-              <th>Órgão julgador</th>
-              <th>Assuntos</th>
-            </tr>
-          </thead>
-
-          <tbody id="resultsBody">
-          </tbody>
-
-        </table>
-
-      </div>
-
-      <div class="pagination">
-
-        <button
-          id="previousPage"
-          class="secondary"
-          type="button"
-        >
-          ← Anterior
-        </button>
-
-        <span id="paginationText">
-          Página 1
-        </span>
-
-        <button
-          id="nextPage"
-          class="secondary"
-          type="button"
-        >
-          Próxima →
-        </button>
-
-      </div>
 
     </section>
 
@@ -247,11 +189,80 @@
       id="errorCard"
       hidden
     >
-      <strong>
-        Não foi possível concluir a operação.
-      </strong>
-
+      <strong>Não foi possível concluir a operação.</strong>
       <p id="errorText"></p>
+    </section>
+
+    <section
+      class="card error-card"
+      id="partialErrorCard"
+      hidden
+    >
+      <strong>Alguns tribunais apresentaram falha.</strong>
+      <div id="partialErrorText"></div>
+    </section>
+
+    <section
+      class="card"
+      id="resultsCard"
+      hidden
+    >
+
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">RESULTADOS</span>
+          <h2 id="resultsTitle">Resultados da pesquisa</h2>
+          <p id="resultsSubtitle"></p>
+        </div>
+
+        <button
+          class="secondary"
+          id="downloadCsv"
+          type="button"
+          disabled
+        >
+          Exportar resultados carregados
+        </button>
+      </div>
+
+      <div
+        id="tribunalSummary"
+        class="tribunal-summary"
+      ></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Processo</th>
+              <th>Tribunal</th>
+              <th>Ajuizamento</th>
+              <th>Grau</th>
+              <th>Classe</th>
+              <th>Órgão julgador</th>
+              <th>Assuntos</th>
+            </tr>
+          </thead>
+
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <span id="loadMoreInfo">
+          Os resultados são carregados sob demanda.
+        </span>
+
+        <button
+          id="loadMore"
+          class="secondary"
+          type="button"
+          hidden
+        >
+          Carregar mais
+        </button>
+      </div>
+
     </section>
 
   </main>
