@@ -45,6 +45,23 @@ class ProcessAnalysis(Base):
     valor_indenizacao_centavos: Mapped[int | None] = mapped_column(Integer, nullable=True)
     valor_arbitrado_juiz_centavos: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     fonte_valor_arbitrado: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Nova modelagem jurimétrica.
+    confianca_resultado: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confianca_valor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    valor_primeiro_grau_centavos: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    valor_final_centavos: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    situacao_valor: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    fonte_valor: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    evidencias_resultado: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    evidencias_valor: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     resumo: Mapped[str | None] = mapped_column(Text, nullable=True)
     fundamentos: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     confianca: Mapped[int | None] = mapped_column(Integer, nullable=True)

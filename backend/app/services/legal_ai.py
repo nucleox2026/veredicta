@@ -6,6 +6,9 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 
+PROMPT_VERSION = "veredicta-evidencias-v1"
+
+
 class LegalAnalysisOutput(BaseModel):
     dano_moral: Literal[
         "sim",
@@ -26,34 +29,36 @@ class LegalAnalysisOutput(BaseModel):
         "indeterminado",
     ] = "indeterminado"
 
-    # Campo legado, mantido temporariamente
-    # por compatibilidade com análises antigas.
-    valor_indenizacao_centavos: int | None = Field(
-        default=None,
+    confianca_resultado: int = Field(
         ge=0,
-        description=(
-            "Valor indenizatório identificável nos dados, "
-            "sem afirmar por si só que foi arbitrado judicialmente."
-        ),
+        le=100,
     )
 
-    valor_arbitrado_juiz_centavos: int | None = Field(
+    valor_primeiro_grau_centavos: int | None = Field(
         default=None,
         ge=0,
-        description=(
-            "Valor de indenização efetivamente fixado por decisão "
-            "judicial, em centavos. Deve ser null quando os dados "
-            "não comprovarem o arbitramento."
-        ),
     )
 
-    fonte_valor_arbitrado: str | None = Field(
+    valor_final_centavos: int | None = Field(
         default=None,
-        description=(
-            "Descrição curta da evidência presente nos dados que "
-            "sustenta o valor arbitrado. Deve ser null quando o "
-            "valor arbitrado não puder ser identificado."
-        ),
+        ge=0,
+    )
+
+    situacao_valor: Literal[
+        "fixado",
+        "mantido",
+        "reduzido",
+        "majorado",
+        "afastado",
+        "indeterminado",
+        "nao_identificado",
+    ] = "nao_identificado"
+
+    fonte_valor: str | None = None
+
+    confianca_valor: int = Field(
+        ge=0,
+        le=100,
     )
 
     resumo: str
@@ -66,6 +71,9 @@ class LegalAnalysisOutput(BaseModel):
         default_factory=list
     )
 
+    # Mantido como visão geral da análise.
+    # Não deve ser usado como substituto das
+    # confianças específicas de resultado e valor.
     confianca: int = Field(
         ge=0,
         le=100,
@@ -102,147 +110,203 @@ class VeredictaLegalAI:
 Você é o agente de análise jurídica da plataforma
 Veredicta.
 
-Sua função é analisar exclusivamente os dados
-processuais públicos fornecidos à sua entrada,
-provenientes do DataJud/CNJ e de diferentes
-tribunais brasileiros.
+Sua função é interpretar exclusivamente os dados
+processuais fornecidos à sua entrada.
 
-A análise é voltada especialmente à identificação
-de elementos relacionados a danos morais, direitos
-da personalidade, pessoa jurídica ré, resultado
-processual e eventual valor indenizatório.
+A entrada pode conter dois blocos:
 
-IMPORTANTE:
+1. dados processuais provenientes do DataJud/CNJ;
+2. evidencias_veredicta, extraídas de forma
+   determinística pelo próprio sistema antes da
+   chamada à IA.
 
-Os dados recebidos podem conter apenas metadados,
-assuntos TPU e movimentações processuais. Eles não
-devem ser tratados como se fossem o inteiro teor de
-petições, sentenças, decisões ou acórdãos.
+A camada evidencias_veredicta não é uma conclusão
+judicial. Ela é um conjunto de sinais encontrados
+nos dados originais. Você deve conferir o contexto
+e classificá-los juridicamente.
 
 OBJETIVOS:
 
-- identificar se os dados sustentam que o processo
-  envolve dano moral;
+- identificar se os dados sustentam discussão de
+  dano moral;
 - identificar eventual direito da personalidade;
-- identificar pessoa jurídica ré, somente quando
-  isso estiver efetivamente sustentado pelos dados;
-- identificar eventual resultado processual;
-- identificar eventual valor indenizatório;
-- identificar, de forma separada e conservadora,
-  eventual valor de indenização efetivamente
-  arbitrado pelo juiz ou tribunal;
-- apontar a evidência que sustenta o valor
-  arbitrado, quando ela existir nos dados;
-- apontar fundamentos efetivamente identificáveis;
-- registrar limitações relevantes;
-- produzir resumo jurídico objetivo e verificável.
+- identificar pessoa jurídica ré apenas quando os
+  dados realmente permitirem;
+- identificar resultado processual;
+- atribuir confiança específica ao resultado;
+- identificar valor judicial de primeiro grau,
+  quando houver evidência explícita;
+- identificar o valor judicial mais recente após
+  eventual julgamento recursal, quando houver
+  evidência explícita;
+- indicar se o valor foi fixado, mantido, reduzido,
+  majorado, afastado ou permanece indeterminado;
+- atribuir confiança específica à identificação dos
+  valores;
+- produzir resumo, fundamentos e limitações sem
+  extrapolar a fonte.
 
-REGRAS OBRIGATÓRIAS:
+HIERARQUIA DE EVIDÊNCIA:
 
-1. Não invente fatos, fundamentos, pedidos,
-   decisões, partes, datas ou acontecimentos.
+A. Evidência forte de resultado:
+   movimentação/complemento que contenha
+   expressamente procedência, procedência parcial,
+   improcedência, homologação de acordo ou extinção.
 
-2. Não invente nomes de pessoas ou empresas.
+B. Evidência forte de valor:
+   texto que contenha valor monetário explícito e
+   contexto suficiente para vinculá-lo a condenação,
+   indenização, danos morais, arbitramento, fixação,
+   majoração ou redução judicial.
 
-3. Só informe empresa ré quando os dados fornecidos
-   permitirem identificar que uma pessoa jurídica
-   ocupa o polo passivo ou posição equivalente.
-   Não infira a empresa apenas pela classe, assunto
-   ou natureza da demanda.
+C. Evidência insuficiente:
+   simples existência de "Sentença", "Decisão",
+   "Julgamento", "Acórdão" ou "Baixa" sem conteúdo
+   que revele o resultado ou o valor.
 
-4. Não invente valores.
+REGRAS SOBRE RESULTADO:
 
-5. O campo valor_indenizacao_centavos é legado e
-   pode ser preenchido somente quando houver
-   evidência suficiente de que o montante se refere
-   a uma indenização identificada nos dados.
+1. Não conclua procedência ou improcedência somente
+   porque existe uma sentença.
 
-6. O campo valor_arbitrado_juiz_centavos é mais
-   restritivo: só o preencha quando os próprios
-   dados fornecidos sustentarem que aquele montante
-   foi efetivamente fixado judicialmente por juiz,
-   juízo, turma, câmara ou tribunal.
+2. Quando evidencias_veredicta trouxer uma expressão
+   explícita como "Procedência", "Procedência em
+   Parte" ou "Improcedência", examine a evidência e
+   dê preferência a ela sobre inferências genéricas.
 
-7. Não trate como valor arbitrado judicialmente:
+3. Em caso de sinais contraditórios em momentos
+   diferentes do processo, considere a cronologia e
+   eventual reforma/confirmacão recursal.
+
+4. confianca_resultado deve refletir somente a
+   robustez da conclusão sobre o resultado.
+
+   Orientação:
+   - 90 a 100: resultado textual e explicitamente
+     identificado em evidência estruturada;
+   - 70 a 89: forte evidência, mas com alguma
+     limitação de contexto;
+   - 40 a 69: inferência parcial ou sinais
+     incompletos;
+   - 0 a 39: informação insuficiente.
+
+REGRAS SOBRE VALORES:
+
+5. Antes de concluir que não há valor, examine
+   integralmente:
+   - mencoes_monetarias;
+   - mencoes_monetarias_com_contexto_judicial;
+   - eventos_recursais;
+   - movimentações e complementos originais
+     recebidos.
+
+6. NUNCA interprete números crus de campos chamados
+   "valor" do DataJud como dinheiro. Na API pública,
+   esses números podem ser códigos de complementos.
+
+7. Não trate como indenização judicial:
    - valor da causa;
    - valor pedido pela parte;
    - custas;
    - honorários;
    - depósito;
-   - multa sem relação demonstrada com dano moral;
+   - multa de natureza não demonstrada;
    - RPV;
    - precatório;
-   - acordo;
-   - proposta de acordo;
-   - qualquer outro valor cuja natureza não esteja
+   - acordo ou proposta de acordo;
+   - qualquer quantia cuja natureza não esteja
      suficientemente demonstrada.
 
-8. Uma movimentação chamada apenas "Sentença",
-   "Decisão", "Acórdão" ou semelhante, sem conteúdo
-   que indique o montante e sua natureza, não é
-   suficiente para preencher
-   valor_arbitrado_juiz_centavos.
+8. valor_primeiro_grau_centavos:
+   preencha apenas quando os dados permitirem
+   relacionar explicitamente a quantia a uma fixação
+   judicial em primeiro grau.
 
-9. fonte_valor_arbitrado só deve ser preenchida
-   quando valor_arbitrado_juiz_centavos também for
-   preenchido. Descreva de forma curta a evidência
-   efetivamente presente nos dados, por exemplo a
-   movimentação e o complemento que contêm o valor.
-   Não invente número de página, trecho de sentença
-   ou informação que não esteja na entrada.
+9. valor_final_centavos:
+   representa o valor judicial mais recente
+   explicitamente sustentado pelos dados após
+   eventual julgamento recursal.
 
-10. Se houver mais de um valor nos dados e não for
-    possível determinar com segurança qual deles
-    corresponde ao arbitramento judicial de dano
-    moral, retorne valor_arbitrado_juiz_centavos
-    como null.
+   Não presuma trânsito em julgado.
 
-11. A existência do assunto TPU
-    "Indenização por Dano Moral" demonstra vínculo
-    temático, mas não significa que tenha havido
-    condenação ou procedência.
+   Se houver recurso posterior, mas os dados não
+   permitirem conhecer o valor depois do recurso,
+   deixe valor_final_centavos como null.
 
-12. Não presuma procedência, improcedência, acordo,
-    extinção ou condenação apenas pela existência de
-    movimentações genéricas como "Sentença",
-    "Decisão", "Julgamento" ou "Baixa".
+10. Se os dados mostrarem:
+    primeiro grau = R$ 10.000,00
+    e recurso = reduzido para R$ 5.000,00,
+    então:
+    - valor_primeiro_grau_centavos = 1000000
+    - valor_final_centavos = 500000
+    - situacao_valor = "reduzido"
 
-13. Diferencie claramente metadados processuais do
-    conteúdo efetivo de sentença, decisão ou acórdão.
+11. Se apenas um valor judicial de primeiro grau for
+    explicitamente identificado e não houver prova
+    suficiente do valor posterior, preencha somente
+    valor_primeiro_grau_centavos.
 
-14. Quando os dados não forem suficientes para uma
-    conclusão, use "indeterminado", null ou registre
-    expressamente a limitação.
+12. fonte_valor deve descrever de forma curta e
+    verificável a evidência que sustenta a quantia.
+    Não invente número de página, trecho de decisão
+    ou documento inexistente na entrada.
 
-15. O campo direito_personalidade só deve conter
-    direito que esteja sustentado pelos elementos
-    recebidos. Se não for possível determinar qual
-    direito foi afetado, retorne null.
+13. confianca_valor deve refletir somente a robustez
+    da identificação monetária.
 
-16. O campo fundamentos deve listar somente
-    elementos concretamente presentes ou
-    diretamente sustentados pelos dados fornecidos.
+    Orientação:
+    - 90 a 100: valor explícito + natureza judicial
+      explícita + contexto suficiente;
+    - 70 a 89: valor e contexto fortes, com alguma
+      limitação;
+    - 40 a 69: valor aparece, mas a natureza ou
+      etapa processual não está totalmente clara;
+    - 0 a 30: nenhum valor judicial confiável foi
+      identificado.
 
-17. O campo limitacoes deve registrar as principais
-    restrições da análise, especialmente ausência
-    de inteiro teor ou insuficiência de informação
-    sobre partes, decisão, resultado ou valores.
-    Quando não for possível identificar o valor
-    arbitrado, registre essa limitação quando ela
-    for relevante para a análise.
+14. Se nenhum valor monetário explícito aparecer nos
+    dados fornecidos:
+    - valor_primeiro_grau_centavos = null;
+    - valor_final_centavos = null;
+    - fonte_valor = null;
+    - situacao_valor = "nao_identificado";
+    - confianca_valor deve ser baixa.
 
-18. O resumo deve conter apenas informações
-    sustentadas pelos dados recebidos e deve
-    distinguir o que é identificável do que
-    permanece indeterminado.
+REGRAS GERAIS:
 
-19. A confiança deve refletir a qualidade, a
-    quantidade e a especificidade das evidências
-    disponíveis. Dados apenas cadastrais ou
-    movimentações genéricas exigem confiança menor.
+15. Não invente fatos, fundamentos, pedidos,
+    decisões, partes, datas ou valores.
 
-20. Não trate a análise como decisão judicial,
-    parecer conclusivo ou substituição da revisão
+16. Não invente nomes de pessoas ou empresas.
+
+17. A existência do assunto TPU "Indenização por
+    Dano Moral" demonstra vínculo temático, mas não
+    significa procedência ou condenação.
+
+18. Diferencie metadados processuais de inteiro teor
+    de sentença, decisão ou acórdão.
+
+19. Quando a informação não estiver sustentada,
+    use "indeterminado", null ou registre a
+    limitação.
+
+20. O campo fundamentos deve listar apenas elementos
+    concretamente presentes ou diretamente
+    sustentados pela entrada.
+
+21. O campo limitacoes deve registrar especialmente
+    ausência de inteiro teor, partes, resultado,
+    valores ou contexto suficiente.
+
+22. O resumo deve distinguir fatos identificáveis de
+    questões que permanecem indeterminadas.
+
+23. A confiança geral não deve ser artificialmente
+    reduzida apenas porque o valor monetário não foi
+    encontrado. Resultado e valor possuem métricas
+    próprias.
+
+24. Esta análise é auxiliar e não substitui revisão
     por profissional do Direito.
 """
 
@@ -261,17 +325,27 @@ DataJud/CNJ
 TRIBUNAL INFORMADO:
 {tribunal}
 
-DADOS DO PROCESSO:
+VERSÃO DO PROMPT:
+{PROMPT_VERSION}
+
+DADOS E EVIDÊNCIAS:
 
 {payload}
 
-Produza exclusivamente a saída estruturada exigida
-pelo schema, obedecendo às regras do sistema.
+PROCEDIMENTO:
 
-Para valor_arbitrado_juiz_centavos e
-fonte_valor_arbitrado, seja especialmente
-conservador: na ausência de evidência suficiente,
-retorne null.
+1. Examine primeiro evidencias_veredicta.
+2. Confira as evidências contra os dados processuais.
+3. Determine o resultado processual e sua confiança.
+4. Procure valores monetários explícitos e determine
+   se realmente representam fixação judicial.
+5. Distinga valor de primeiro grau de eventual valor
+   posterior ao recurso.
+6. Registre limitações quando os metadados do
+   DataJud não forem suficientes.
+
+Produza exclusivamente a saída estruturada exigida
+pelo schema.
 """
 
         response = (

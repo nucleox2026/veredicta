@@ -86,6 +86,35 @@ create table if not exists process_analyses (
   -- Evidência textual que sustenta o valor acima.
   fonte_valor_arbitrado text,
 
+  -- Nova modelagem jurimétrica.
+  confianca_resultado integer
+    check (
+      confianca_resultado is null
+      or confianca_resultado between 0 and 100
+    ),
+
+  confianca_valor integer
+    check (
+      confianca_valor is null
+      or confianca_valor between 0 and 100
+    ),
+
+  valor_primeiro_grau_centavos bigint,
+
+  valor_final_centavos bigint,
+
+  situacao_valor varchar(50),
+
+  fonte_valor text,
+
+  evidencias_resultado jsonb,
+
+  evidencias_valor jsonb,
+
+  prompt_version varchar(50),
+
+  analyzed_at timestamptz,
+
   resumo text,
 
   fundamentos jsonb,
@@ -129,6 +158,46 @@ alter table process_analyses
 alter table process_analyses
   add column if not exists
   fonte_valor_arbitrado text;
+
+alter table process_analyses
+  add column if not exists
+  confianca_resultado integer;
+
+alter table process_analyses
+  add column if not exists
+  confianca_valor integer;
+
+alter table process_analyses
+  add column if not exists
+  valor_primeiro_grau_centavos bigint;
+
+alter table process_analyses
+  add column if not exists
+  valor_final_centavos bigint;
+
+alter table process_analyses
+  add column if not exists
+  situacao_valor varchar(50);
+
+alter table process_analyses
+  add column if not exists
+  fonte_valor text;
+
+alter table process_analyses
+  add column if not exists
+  evidencias_resultado jsonb;
+
+alter table process_analyses
+  add column if not exists
+  evidencias_valor jsonb;
+
+alter table process_analyses
+  add column if not exists
+  prompt_version varchar(50);
+
+alter table process_analyses
+  add column if not exists
+  analyzed_at timestamptz;
 
 -- As análises históricas anteriores à arquitetura multi-TJ
 -- pertenciam ao fluxo TJMT.

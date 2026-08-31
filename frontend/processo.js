@@ -243,7 +243,13 @@ function friendlyValue(value) {
     parcialmente_procedente:
       "Parcialmente procedente",
     extinto: "Extinto",
-    acordo: "Acordo"
+    acordo: "Acordo",
+    fixado: "Fixado em decisão judicial",
+    mantido: "Mantido",
+    reduzido: "Reduzido em recurso",
+    majorado: "Majorado em recurso",
+    afastado: "Afastado",
+    nao_identificado: "Não identificado"
   };
 
   const key =
@@ -950,37 +956,86 @@ function renderAnalysis(
       analysis.resultado
     );
 
-  const arbitratedValue =
-    analysis
-      .valor_arbitrado_juiz_centavos;
-
-  const hasLegacyValue =
-    (
-      arbitratedValue === null ||
-      arbitratedValue === undefined
-    ) &&
-    analysis
-      .valor_indenizacao_centavos !== null &&
-    analysis
-      .valor_indenizacao_centavos !== undefined;
-
-  $("analysisValue")
+  $("analysisResultConfidence")
     .textContent =
-    hasLegacyValue
-      ? "Reanálise necessária"
-      : formatMoneyFromCents(
-          arbitratedValue
-        );
+    (
+      analysis.confianca_resultado !== null &&
+      analysis.confianca_resultado !== undefined
+    )
+      ? `${analysis.confianca_resultado}%`
+      : "Não calculada";
+
+  const firstInstanceValue =
+    analysis
+      .valor_primeiro_grau_centavos;
+
+  const finalValue =
+    analysis
+      .valor_final_centavos;
+
+  const isNewJurimetricAnalysis =
+    Boolean(
+      analysis.prompt_version
+    );
+
+  $("analysisFirstInstanceValue")
+    .textContent =
+    (
+      firstInstanceValue !== null &&
+      firstInstanceValue !== undefined
+    )
+      ? formatMoneyFromCents(
+          firstInstanceValue
+        )
+      : (
+        isNewJurimetricAnalysis
+          ? "Não identificado"
+          : "Reanálise necessária"
+      );
+
+  $("analysisFinalValue")
+    .textContent =
+    (
+      finalValue !== null &&
+      finalValue !== undefined
+    )
+      ? formatMoneyFromCents(
+          finalValue
+        )
+      : (
+        isNewJurimetricAnalysis
+          ? "Não identificado"
+          : "Reanálise necessária"
+      );
+
+  $("analysisValueStatus")
+    .textContent =
+    isNewJurimetricAnalysis
+      ? friendlyValue(
+          analysis.situacao_valor ||
+          "nao_identificado"
+        )
+      : "Reanálise necessária";
+
+  $("analysisValueConfidence")
+    .textContent =
+    (
+      analysis.confianca_valor !== null &&
+      analysis.confianca_valor !== undefined
+    )
+      ? `${analysis.confianca_valor}%`
+      : "Não calculada";
 
   $("analysisValueSource")
     .textContent =
-    hasLegacyValue
-      ? "Análise anterior ao campo específico"
-      : (
-        analysis
-          .fonte_valor_arbitrado ||
-        "Não identificada"
-      );
+    (
+      analysis.fonte_valor ||
+      (
+        isNewJurimetricAnalysis
+          ? "Não identificada"
+          : "Reanálise necessária"
+      )
+    );
 
   $("analysisConfidence")
     .textContent =
@@ -1006,11 +1061,31 @@ function renderAnalysis(
     analysis.limitacoes
   );
 
+  const analysisMeta = [];
+
+  if (analysis.model_name) {
+    analysisMeta.push(
+      `Modelo: ${analysis.model_name}`
+    );
+  }
+
+  if (analysis.prompt_version) {
+    analysisMeta.push(
+      `Prompt: ${analysis.prompt_version}`
+    );
+  }
+
+  if (analysis.analyzed_at) {
+    analysisMeta.push(
+      `Analisado em: ${formatDateTime(
+        analysis.analyzed_at
+      )}`
+    );
+  }
+
   $("analysisModel")
     .textContent =
-    analysis.model_name
-      ? `Modelo: ${analysis.model_name}`
-      : "";
+    analysisMeta.join(" · ");
 }
 
 

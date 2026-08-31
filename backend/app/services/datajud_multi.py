@@ -8,6 +8,9 @@ from app.services.tribunals import (
     get_datajud_endpoint,
     normalize_tribunal,
 )
+from app.services.datajud_guard import (
+    DATAJUD_GUARD,
+)
 
 
 MAX_WORKERS = 5
@@ -129,6 +132,29 @@ class DataJudMultiClient:
             tribunal
         )
 
+        cache_key = (
+            DATAJUD_GUARD
+            .make_cache_key(
+                tribunal,
+                payload,
+            )
+        )
+
+        cached = (
+            DATAJUD_GUARD
+            .get_cached(
+                cache_key
+            )
+        )
+
+        if cached is not None:
+            return cached
+
+        # Reserva uma chamada real ao DataJud.
+        # O cache é consultado antes para que
+        # buscas repetidas não consumam a cota.
+        DATAJUD_GUARD.acquire()
+
         body = json.dumps(
             payload
         ).encode("utf-8")
@@ -155,11 +181,18 @@ class DataJudMultiClient:
                 request,
                 timeout=30,
             ) as response:
-                return json.loads(
+                data = json.loads(
                     response
                     .read()
                     .decode("utf-8")
                 )
+
+                DATAJUD_GUARD.set_cached(
+                    cache_key,
+                    data,
+                )
+
+                return data
 
         except HTTPError as exc:
             try:
@@ -171,6 +204,32 @@ class DataJudMultiClient:
 
             except Exception:
                 detail = str(exc)
+
+            if exc.code == 429:
+                retry_after = (
+                    exc.headers.get(
+                        "Retry-After"
+                    )
+                    if exc.headers
+                    else None
+                )
+
+                retry_text = (
+                    f" Aguarde {retry_after} "
+                    "segundo(s) e tente novamente."
+                    if retry_after
+                    else (
+                        " Aguarde alguns segundos "
+                        "e tente novamente."
+                    )
+                )
+
+                raise DataJudError(
+                    f"{tribunal}: limite temporário "
+                    "de consultas do DataJud "
+                    "atingido."
+                    f"{retry_text}"
+                ) from exc
 
             raise DataJudError(
                 f"{tribunal}: DataJud retornou "

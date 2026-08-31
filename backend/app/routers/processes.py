@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 from fastapi import (
     APIRouter,
@@ -20,7 +20,11 @@ from ..services.datajud_multi import (
     DataJudMultiClient,
 )
 from ..services.legal_ai import (
+    PROMPT_VERSION,
     VeredictaLegalAI,
+)
+from ..services.legal_evidence import (
+    extract_legal_evidence,
 )
 from ..services.tribunals import (
     get_tribunal,
@@ -359,6 +363,58 @@ def analysis_to_dict(
         "fonte_valor_arbitrado": (
             analysis
             .fonte_valor_arbitrado
+        ),
+
+        "confianca_resultado": (
+            analysis
+            .confianca_resultado
+        ),
+
+        "confianca_valor": (
+            analysis
+            .confianca_valor
+        ),
+
+        "valor_primeiro_grau_centavos": (
+            analysis
+            .valor_primeiro_grau_centavos
+        ),
+
+        "valor_final_centavos": (
+            analysis
+            .valor_final_centavos
+        ),
+
+        "situacao_valor": (
+            analysis
+            .situacao_valor
+        ),
+
+        "fonte_valor": (
+            analysis
+            .fonte_valor
+        ),
+
+        "evidencias_resultado": (
+            analysis
+            .evidencias_resultado
+            or []
+        ),
+
+        "evidencias_valor": (
+            analysis
+            .evidencias_valor
+            or []
+        ),
+
+        "prompt_version": (
+            analysis
+            .prompt_version
+        ),
+
+        "analyzed_at": (
+            analysis
+            .analyzed_at
         ),
 
         "resumo": (
@@ -1237,6 +1293,12 @@ def analyze_lookup_process(
         "movimentos": (
             movimentos[:100]
         ),
+
+        "evidencias_veredicta": (
+            extract_legal_evidence(
+                source
+            )
+        ),
     }
 
     # -----------------------------------------------------
@@ -1291,19 +1353,79 @@ def analyze_lookup_process(
             ai_result.resultado
         ),
 
+        # Compatibilidade temporária com os
+        # campos da interface anterior.
         "valor_indenizacao_centavos": (
             ai_result
-            .valor_indenizacao_centavos
+            .valor_primeiro_grau_centavos
         ),
 
         "valor_arbitrado_juiz_centavos": (
             ai_result
-            .valor_arbitrado_juiz_centavos
+            .valor_primeiro_grau_centavos
         ),
 
         "fonte_valor_arbitrado": (
             ai_result
-            .fonte_valor_arbitrado
+            .fonte_valor
+        ),
+
+        "confianca_resultado": (
+            ai_result
+            .confianca_resultado
+        ),
+
+        "confianca_valor": (
+            ai_result
+            .confianca_valor
+        ),
+
+        "valor_primeiro_grau_centavos": (
+            ai_result
+            .valor_primeiro_grau_centavos
+        ),
+
+        "valor_final_centavos": (
+            ai_result
+            .valor_final_centavos
+        ),
+
+        "situacao_valor": (
+            ai_result
+            .situacao_valor
+        ),
+
+        "fonte_valor": (
+            ai_result
+            .fonte_valor
+        ),
+
+        "evidencias_resultado": (
+            ai_payload[
+                "evidencias_veredicta"
+            ].get(
+                "evidencias_resultado",
+                [],
+            )
+        ),
+
+        "evidencias_valor": (
+            ai_payload[
+                "evidencias_veredicta"
+            ].get(
+                "mencoes_monetarias",
+                [],
+            )
+        ),
+
+        "prompt_version": (
+            PROMPT_VERSION
+        ),
+
+        "analyzed_at": (
+            datetime.now(
+                timezone.utc
+            )
         ),
 
         "resumo": (
@@ -1672,6 +1794,12 @@ def analyze_process(
         "movimentos": (
             movimentos[:100]
         ),
+
+        "evidencias_veredicta": (
+            extract_legal_evidence(
+                raw_source
+            )
+        ),
     }
 
     # -----------------------------------------------------
@@ -1726,19 +1854,79 @@ def analyze_process(
             result.resultado
         ),
 
+        # Compatibilidade temporária com os
+        # campos da interface anterior.
         "valor_indenizacao_centavos": (
             result
-            .valor_indenizacao_centavos
+            .valor_primeiro_grau_centavos
         ),
 
         "valor_arbitrado_juiz_centavos": (
             result
-            .valor_arbitrado_juiz_centavos
+            .valor_primeiro_grau_centavos
         ),
 
         "fonte_valor_arbitrado": (
             result
-            .fonte_valor_arbitrado
+            .fonte_valor
+        ),
+
+        "confianca_resultado": (
+            result
+            .confianca_resultado
+        ),
+
+        "confianca_valor": (
+            result
+            .confianca_valor
+        ),
+
+        "valor_primeiro_grau_centavos": (
+            result
+            .valor_primeiro_grau_centavos
+        ),
+
+        "valor_final_centavos": (
+            result
+            .valor_final_centavos
+        ),
+
+        "situacao_valor": (
+            result
+            .situacao_valor
+        ),
+
+        "fonte_valor": (
+            result
+            .fonte_valor
+        ),
+
+        "evidencias_resultado": (
+            ai_payload[
+                "evidencias_veredicta"
+            ].get(
+                "evidencias_resultado",
+                [],
+            )
+        ),
+
+        "evidencias_valor": (
+            ai_payload[
+                "evidencias_veredicta"
+            ].get(
+                "mencoes_monetarias",
+                [],
+            )
+        ),
+
+        "prompt_version": (
+            PROMPT_VERSION
+        ),
+
+        "analyzed_at": (
+            datetime.now(
+                timezone.utc
+            )
         ),
 
         "resumo": (
