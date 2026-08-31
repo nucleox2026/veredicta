@@ -351,6 +351,16 @@ def analysis_to_dict(
             .valor_indenizacao_centavos
         ),
 
+        "valor_arbitrado_juiz_centavos": (
+            analysis
+            .valor_arbitrado_juiz_centavos
+        ),
+
+        "fonte_valor_arbitrado": (
+            analysis
+            .fonte_valor_arbitrado
+        ),
+
         "resumo": (
             analysis.resumo
         ),
@@ -1286,6 +1296,16 @@ def analyze_lookup_process(
             .valor_indenizacao_centavos
         ),
 
+        "valor_arbitrado_juiz_centavos": (
+            ai_result
+            .valor_arbitrado_juiz_centavos
+        ),
+
+        "fonte_valor_arbitrado": (
+            ai_result
+            .fonte_valor_arbitrado
+        ),
+
         "resumo": (
             ai_result.resumo
         ),
@@ -1709,6 +1729,16 @@ def analyze_process(
         "valor_indenizacao_centavos": (
             result
             .valor_indenizacao_centavos
+        ),
+
+        "valor_arbitrado_juiz_centavos": (
+            result
+            .valor_arbitrado_juiz_centavos
+        ),
+
+        "fonte_valor_arbitrado": (
+            result
+            .fonte_valor_arbitrado
         ),
 
         "resumo": (

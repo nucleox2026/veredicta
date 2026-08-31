@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from sqlalchemy import Date, DateTime, Integer, JSON, String, Text
+from sqlalchemy import BigInteger, Date, DateTime, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -43,6 +43,8 @@ class ProcessAnalysis(Base):
     empresa_re: Mapped[str | None] = mapped_column(String(500), nullable=True)
     resultado: Mapped[str | None] = mapped_column(String(100), nullable=True)
     valor_indenizacao_centavos: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    valor_arbitrado_juiz_centavos: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fonte_valor_arbitrado: Mapped[str | None] = mapped_column(Text, nullable=True)
     resumo: Mapped[str | None] = mapped_column(Text, nullable=True)
     fundamentos: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     confianca: Mapped[int | None] = mapped_column(Integer, nullable=True)

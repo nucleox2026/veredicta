@@ -76,7 +76,15 @@ create table if not exists process_analyses (
 
   resultado varchar(100),
 
+  -- Campo legado, mantido temporariamente.
   valor_indenizacao_centavos bigint,
+
+  -- Campo específico para jurimetria:
+  -- somente valor efetivamente arbitrado judicialmente.
+  valor_arbitrado_juiz_centavos bigint,
+
+  -- Evidência textual que sustenta o valor acima.
+  fonte_valor_arbitrado text,
 
   resumo text,
 
@@ -109,13 +117,18 @@ on process_analyses(
 -- =========================================================
 -- MIGRAÇÃO SEGURA PARA BANCOS JÁ EXISTENTES
 -- =========================================================
---
--- Estas instruções são idempotentes e documentam a
--- migração aplicada ao banco existente.
 
 alter table process_analyses
   add column if not exists
   tribunal varchar(20);
+
+alter table process_analyses
+  add column if not exists
+  valor_arbitrado_juiz_centavos bigint;
+
+alter table process_analyses
+  add column if not exists
+  fonte_valor_arbitrado text;
 
 -- As análises históricas anteriores à arquitetura multi-TJ
 -- pertenciam ao fluxo TJMT.

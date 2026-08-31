@@ -950,12 +950,37 @@ function renderAnalysis(
       analysis.resultado
     );
 
+  const arbitratedValue =
+    analysis
+      .valor_arbitrado_juiz_centavos;
+
+  const hasLegacyValue =
+    (
+      arbitratedValue === null ||
+      arbitratedValue === undefined
+    ) &&
+    analysis
+      .valor_indenizacao_centavos !== null &&
+    analysis
+      .valor_indenizacao_centavos !== undefined;
+
   $("analysisValue")
     .textContent =
-    formatMoneyFromCents(
-      analysis
-        .valor_indenizacao_centavos
-    );
+    hasLegacyValue
+      ? "Reanálise necessária"
+      : formatMoneyFromCents(
+          arbitratedValue
+        );
+
+  $("analysisValueSource")
+    .textContent =
+    hasLegacyValue
+      ? "Análise anterior ao campo específico"
+      : (
+        analysis
+          .fonte_valor_arbitrado ||
+        "Não identificada"
+      );
 
   $("analysisConfidence")
     .textContent =

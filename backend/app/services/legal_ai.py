@@ -26,9 +26,34 @@ class LegalAnalysisOutput(BaseModel):
         "indeterminado",
     ] = "indeterminado"
 
+    # Campo legado, mantido temporariamente
+    # por compatibilidade com análises antigas.
     valor_indenizacao_centavos: int | None = Field(
         default=None,
         ge=0,
+        description=(
+            "Valor indenizatório identificável nos dados, "
+            "sem afirmar por si só que foi arbitrado judicialmente."
+        ),
+    )
+
+    valor_arbitrado_juiz_centavos: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Valor de indenização efetivamente fixado por decisão "
+            "judicial, em centavos. Deve ser null quando os dados "
+            "não comprovarem o arbitramento."
+        ),
+    )
+
+    fonte_valor_arbitrado: str | None = Field(
+        default=None,
+        description=(
+            "Descrição curta da evidência presente nos dados que "
+            "sustenta o valor arbitrado. Deve ser null quando o "
+            "valor arbitrado não puder ser identificado."
+        ),
     )
 
     resumo: str
@@ -102,8 +127,12 @@ OBJETIVOS:
 - identificar pessoa jurídica ré, somente quando
   isso estiver efetivamente sustentado pelos dados;
 - identificar eventual resultado processual;
-- identificar eventual valor de indenização por
-  dano moral;
+- identificar eventual valor indenizatório;
+- identificar, de forma separada e conservadora,
+  eventual valor de indenização efetivamente
+  arbitrado pelo juiz ou tribunal;
+- apontar a evidência que sustenta o valor
+  arbitrado, quando ela existir nos dados;
 - apontar fundamentos efetivamente identificáveis;
 - registrar limitações relevantes;
 - produzir resumo jurídico objetivo e verificável.
@@ -123,55 +152,96 @@ REGRAS OBRIGATÓRIAS:
 
 4. Não invente valores.
 
-5. Só preencha valor_indenizacao_centavos quando
-   houver evidência suficiente de que o valor se
-   refere à indenização identificada. Não confunda
-   valor da causa, custas, honorários, depósitos,
-   RPV, precatório ou outros valores com
-   indenização por dano moral.
+5. O campo valor_indenizacao_centavos é legado e
+   pode ser preenchido somente quando houver
+   evidência suficiente de que o montante se refere
+   a uma indenização identificada nos dados.
 
-6. A existência do assunto TPU
-   "Indenização por Dano Moral" demonstra vínculo
-   temático, mas não significa que tenha havido
-   condenação ou procedência.
+6. O campo valor_arbitrado_juiz_centavos é mais
+   restritivo: só o preencha quando os próprios
+   dados fornecidos sustentarem que aquele montante
+   foi efetivamente fixado judicialmente por juiz,
+   juízo, turma, câmara ou tribunal.
 
-7. Não presuma procedência, improcedência, acordo,
-   extinção ou condenação apenas pela existência de
-   movimentações genéricas como "Sentença",
-   "Decisão", "Julgamento" ou "Baixa".
+7. Não trate como valor arbitrado judicialmente:
+   - valor da causa;
+   - valor pedido pela parte;
+   - custas;
+   - honorários;
+   - depósito;
+   - multa sem relação demonstrada com dano moral;
+   - RPV;
+   - precatório;
+   - acordo;
+   - proposta de acordo;
+   - qualquer outro valor cuja natureza não esteja
+     suficientemente demonstrada.
 
-8. Diferencie claramente metadados processuais do
-   conteúdo efetivo de sentença, decisão ou acórdão.
+8. Uma movimentação chamada apenas "Sentença",
+   "Decisão", "Acórdão" ou semelhante, sem conteúdo
+   que indique o montante e sua natureza, não é
+   suficiente para preencher
+   valor_arbitrado_juiz_centavos.
 
-9. Quando os dados não forem suficientes para uma
-   conclusão, use "indeterminado", null ou registre
-   expressamente a limitação.
+9. fonte_valor_arbitrado só deve ser preenchida
+   quando valor_arbitrado_juiz_centavos também for
+   preenchido. Descreva de forma curta a evidência
+   efetivamente presente nos dados, por exemplo a
+   movimentação e o complemento que contêm o valor.
+   Não invente número de página, trecho de sentença
+   ou informação que não esteja na entrada.
 
-10. O campo direito_personalidade só deve conter
+10. Se houver mais de um valor nos dados e não for
+    possível determinar com segurança qual deles
+    corresponde ao arbitramento judicial de dano
+    moral, retorne valor_arbitrado_juiz_centavos
+    como null.
+
+11. A existência do assunto TPU
+    "Indenização por Dano Moral" demonstra vínculo
+    temático, mas não significa que tenha havido
+    condenação ou procedência.
+
+12. Não presuma procedência, improcedência, acordo,
+    extinção ou condenação apenas pela existência de
+    movimentações genéricas como "Sentença",
+    "Decisão", "Julgamento" ou "Baixa".
+
+13. Diferencie claramente metadados processuais do
+    conteúdo efetivo de sentença, decisão ou acórdão.
+
+14. Quando os dados não forem suficientes para uma
+    conclusão, use "indeterminado", null ou registre
+    expressamente a limitação.
+
+15. O campo direito_personalidade só deve conter
     direito que esteja sustentado pelos elementos
     recebidos. Se não for possível determinar qual
     direito foi afetado, retorne null.
 
-11. O campo fundamentos deve listar somente
+16. O campo fundamentos deve listar somente
     elementos concretamente presentes ou
     diretamente sustentados pelos dados fornecidos.
 
-12. O campo limitacoes deve registrar as principais
+17. O campo limitacoes deve registrar as principais
     restrições da análise, especialmente ausência
     de inteiro teor ou insuficiência de informação
     sobre partes, decisão, resultado ou valores.
+    Quando não for possível identificar o valor
+    arbitrado, registre essa limitação quando ela
+    for relevante para a análise.
 
-13. O resumo deve conter apenas informações
+18. O resumo deve conter apenas informações
     sustentadas pelos dados recebidos e deve
     distinguir o que é identificável do que
     permanece indeterminado.
 
-14. A confiança deve refletir a qualidade, a
+19. A confiança deve refletir a qualidade, a
     quantidade e a especificidade das evidências
     disponíveis. Dados apenas cadastrais ou
     movimentações genéricas exigem confiança menor.
 
-15. Não trate a análise como decisão judicial,
+20. Não trate a análise como decisão judicial,
     parecer conclusivo ou substituição da revisão
     por profissional do Direito.
 """
@@ -197,6 +267,11 @@ DADOS DO PROCESSO:
 
 Produza exclusivamente a saída estruturada exigida
 pelo schema, obedecendo às regras do sistema.
+
+Para valor_arbitrado_juiz_centavos e
+fonte_valor_arbitrado, seja especialmente
+conservador: na ausência de evidência suficiente,
+retorne null.
 """
 
         response = (
