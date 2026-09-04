@@ -11,7 +11,9 @@ def _settings():
     return get_settings()
 
 
-def _api_key_from_settings(settings: Any) -> str | None:
+def _api_key_from_settings(
+    settings: Any,
+) -> str | None:
     candidates = (
         "datajud_api_key",
         "DATAJUD_API_KEY",
@@ -32,12 +34,6 @@ def _api_key_from_settings(settings: Any) -> str | None:
 
 
 def build_datajud_client() -> DataJudMultiClient:
-    """
-    Monta DataJudMultiClient sem expor credenciais.
-
-    O projeto já possui esse cliente; este adaptador existe
-    apenas para o worker reutilizar a mesma integração.
-    """
     signature = inspect.signature(
         DataJudMultiClient
     )
@@ -105,16 +101,26 @@ def fetch_process_from_datajud(
     tribunal: str,
     numero_processo: str,
 ) -> dict[str, Any]:
+    """
+    Retorna SOMENTE o raw_source do processo.
+
+    DataJudMultiClient.get_process retorna um envelope:
+      {
+        "found": ...,
+        "raw_source": {...}
+      }
+
+    O monitor deve calcular o hash sobre os movimentos
+    dentro de raw_source, nunca sobre o envelope.
+    """
     method = client.get_process
 
-    # Primeiro usa a assinatura nominal esperada.
     try:
         result = method(
             tribunal=tribunal,
             numero_processo=numero_processo,
         )
     except TypeError:
-        # Compatibilidade com implementação posicional.
         result = method(
             tribunal,
             numero_processo,
@@ -132,4 +138,25 @@ def fetch_process_from_datajud(
             f"recebido: {type(result).__name__}"
         )
 
+    if "found" in result:
+        if not result.get("found"):
+            raise RuntimeError(
+                "Processo monitorado não foi encontrado "
+                "no DataJud."
+            )
+
+        source = (
+            result.get("raw_source")
+            or {}
+        )
+
+        if not isinstance(source, dict):
+            raise TypeError(
+                "raw_source do DataJud deve ser dict."
+            )
+
+        return source
+
+    # Compatibilidade defensiva caso uma implementação
+    # futura já retorne diretamente o source.
     return result
