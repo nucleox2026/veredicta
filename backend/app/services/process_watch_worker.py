@@ -28,6 +28,7 @@ AnalyzeProcess = Callable[
 
 
 AI_RETRY_MINUTES = 10
+STALE_ANALYZING_MINUTES = 20
 
 STATUS_MONITORANDO = "monitorando"
 STATUS_AGUARDANDO = "aguardando"
@@ -40,74 +41,201 @@ def utc_now() -> datetime:
     )
 
 
-def _datetime_timestamp(
+def _aware(
+    value: datetime | None,
+) -> datetime | None:
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        return value.replace(
+            tzinfo=timezone.utc
+        )
+
+    return value.astimezone(
+        timezone.utc
+    )
+
+
+def _timestamp(
     value: datetime | None,
     *,
     none_value: float,
 ) -> float:
+    value = _aware(
+        value
+    )
+
     if value is None:
         return none_value
-
-    if value.tzinfo is None:
-        value = value.replace(
-            tzinfo=timezone.utc
-        )
 
     return value.timestamp()
 
 
+def _deadline_due(
+    watch: ProcessWatch,
+    now: datetime,
+) -> bool:
+    deadline = _aware(
+        watch.reanalisar_apos
+    )
+
+    return bool(
+        watch.status == STATUS_AGUARDANDO
+        and deadline is not None
+        and deadline <= now
+    )
+
+
 def _watch_priority(
     watch: ProcessWatch,
-) -> tuple[float, float, int]:
+    now: datetime,
+) -> tuple[float, float, float, int]:
     """
-    Ordem da fila:
+    Fila justa por processo.
 
-    1. processos aguardando confirmação da janela;
-    2. demais processos;
-    3. dentro de cada grupo, quem foi verificado há
-       mais tempo vem primeiro.
+    Grupo 0:
+      aguardando com prazo já vencido.
+      Deve confirmar e analisar o quanto antes.
 
-    Assim, processos aguardando movimento adicional
-    são acompanhados de perto sem abandonar a rotação
-    dos demais.
+    Grupo 1:
+      aguardando, mas ainda dentro dos 10 minutos.
+      Rotaciona por ultima_verificacao para que um
+      processo movimentado não monopolize a fila.
+
+    Grupo 2:
+      monitoramento normal, também rotativo.
+
+    STATUS_ANALISANDO recente é excluído da seleção.
     """
+    watch_id = int(
+        watch.id or 0
+    )
+
+    if _deadline_due(
+        watch,
+        now,
+    ):
+        return (
+            0.0,
+            _timestamp(
+                watch.reanalisar_apos,
+                none_value=0.0,
+            ),
+            _timestamp(
+                watch.ultima_verificacao,
+                none_value=0.0,
+            ),
+            watch_id,
+        )
+
     if (
         watch.status
         == STATUS_AGUARDANDO
     ):
-        group = 0.0
-
-        deadline = _datetime_timestamp(
-            watch.reanalisar_apos,
-            none_value=0.0,
-        )
-
         return (
-            group,
-            deadline,
-            int(watch.id or 0),
+            1.0,
+            _timestamp(
+                watch.ultima_verificacao,
+                none_value=0.0,
+            ),
+            _timestamp(
+                watch.reanalisar_apos,
+                none_value=0.0,
+            ),
+            watch_id,
         )
-
-    group = 1.0
-
-    last_check = _datetime_timestamp(
-        watch.ultima_verificacao,
-        none_value=0.0,
-    )
 
     return (
-        group,
-        last_check,
-        int(watch.id or 0),
+        2.0,
+        _timestamp(
+            watch.ultima_verificacao,
+            none_value=0.0,
+        ),
+        0.0,
+        watch_id,
     )
+
+
+def recover_stale_analyzing(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    stale_minutes: int = STALE_ANALYZING_MINUTES,
+) -> int:
+    """
+    Recupera watches que ficaram presos em "analisando"
+    após queda/restart do processo entre o claim e o
+    término da chamada de IA.
+
+    Um watch recente em "analisando" NÃO é tocado.
+    """
+    if stale_minutes <= 0:
+        raise ValueError(
+            "stale_minutes deve ser maior que zero."
+        )
+
+    now = now or utc_now()
+
+    threshold = (
+        now
+        - timedelta(
+            minutes=stale_minutes
+        )
+    )
+
+    candidates = list(
+        db.scalars(
+            select(
+                ProcessWatch
+            ).where(
+                ProcessWatch.ativo.is_(
+                    True
+                ),
+                ProcessWatch.status
+                == STATUS_ANALISANDO,
+            )
+        ).all()
+    )
+
+    recovered = 0
+
+    for watch in candidates:
+        updated_at = _aware(
+            watch.updated_at
+        )
+
+        if (
+            updated_at is not None
+            and updated_at > threshold
+        ):
+            continue
+
+        watch.status = (
+            STATUS_AGUARDANDO
+        )
+        watch.reanalisar_apos = now
+        watch.updated_at = now
+        watch.erro_ultimo = (
+            "Recuperado automaticamente de "
+            "status 'analisando' interrompido."
+        )
+
+        recovered += 1
+
+    if recovered:
+        db.commit()
+
+    return recovered
 
 
 def _select_watches(
     db: Session,
     *,
     limit: int | None,
+    now: datetime,
 ) -> tuple[list[ProcessWatch], int]:
-    watches = list(
+    all_active = list(
         db.scalars(
             select(
                 ProcessWatch
@@ -121,11 +249,25 @@ def _select_watches(
     )
 
     total_active = len(
-        watches
+        all_active
     )
 
+    # Watches analisando recentemente não são
+    # consultados por outra rodada.
+    watches = [
+        watch
+        for watch in all_active
+        if watch.status
+        != STATUS_ANALISANDO
+    ]
+
     watches.sort(
-        key=_watch_priority
+        key=lambda watch: (
+            _watch_priority(
+                watch,
+                now,
+            )
+        )
     )
 
     if limit is not None:
@@ -242,21 +384,26 @@ def run_watch_cycle(
     """
     Executa UMA rodada do monitoramento.
 
-    A fila é rotativa e prioriza processos aguardando.
-    O padrão é consultar no máximo 3 processos por
-    rodada para reduzir pressão sobre o DataJud.
-
-    analyze_process=None:
-    - detecta mudanças;
-    - aplica debounce;
-    - ZERO chamadas à IA.
-
-    analyze_process fornecido:
-    - somente elegíveis após 10 minutos são analisados.
+    - lote padrão de 3;
+    - fila justa;
+    - processos aguardando vencidos têm prioridade;
+    - aguardando não vencidos também rotacionam;
+    - status analisando interrompido é recuperado
+      depois de 20 minutos;
+    - analyze_process=None mantém ZERO IA.
     """
     created_watches = (
         sync_watches_from_analyses(
             db
+        )
+    )
+
+    cycle_now = utc_now()
+
+    recovered = (
+        recover_stale_analyzing(
+            db,
+            now=cycle_now,
         )
     )
 
@@ -266,6 +413,7 @@ def run_watch_cycle(
     ) = _select_watches(
         db,
         limit=limit,
+        now=cycle_now,
     )
 
     stats: dict[str, Any] = {
@@ -274,6 +422,9 @@ def run_watch_cycle(
         ),
         "ativos_disponiveis": (
             total_active
+        ),
+        "analisando_recuperados": (
+            recovered
         ),
         "monitorados": len(
             watches
@@ -370,6 +521,9 @@ def run_watch_cycle(
                     db.commit()
 
                 else:
+                    # Claim persistido antes da chamada externa.
+                    # Se o processo cair aqui, a próxima rodada
+                    # recupera o watch após STALE_ANALYZING_MINUTES.
                     watch.status = (
                         STATUS_ANALISANDO
                     )
@@ -396,7 +550,9 @@ def run_watch_cycle(
 
                         detail[
                             "evento"
-                        ] = "analisado_automaticamente"
+                        ] = (
+                            "analisado_automaticamente"
+                        )
 
                     except Exception as exc:
                         db.rollback()
