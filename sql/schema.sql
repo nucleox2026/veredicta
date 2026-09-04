@@ -86,3 +86,34 @@ on process_analyses(
   tribunal,
   numero_processo
 );
+
+-- =========================================================
+-- Monitoramento automático por processo
+-- =========================================================
+
+create table if not exists process_watches (
+  id bigserial primary key,
+  tribunal varchar(20) not null,
+  numero_processo varchar(40) not null,
+  ativo boolean not null default true,
+  ultimo_hash_movimentos varchar(64),
+  ultima_data_movimento timestamptz,
+  atividade_detectada_em timestamptz,
+  reanalisar_apos timestamptz,
+  ultima_verificacao timestamptz,
+  ultima_analise_automatica timestamptz,
+  status varchar(30) not null default 'monitorando',
+  erro_ultimo text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint uq_process_watches_tribunal_numero
+    unique (tribunal, numero_processo)
+);
+
+create index if not exists
+  ix_process_watches_ativo_status
+on process_watches(ativo, status);
+
+create index if not exists
+  ix_process_watches_reanalisar_apos
+on process_watches(reanalisar_apos);

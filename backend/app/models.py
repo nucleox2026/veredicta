@@ -39,3 +39,98 @@ class ProcessAnalysis(Base):
     confianca: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+# =========================================================
+# MONITORAMENTO AUTOMÁTICO — CONTROLE POR PROCESSO
+# =========================================================
+
+from sqlalchemy import Boolean, UniqueConstraint, text
+
+
+class ProcessWatch(Base):
+    __tablename__ = "process_watches"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tribunal",
+            "numero_processo",
+            name="uq_process_watches_tribunal_numero",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    tribunal: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    numero_processo: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    ativo: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+
+    ultimo_hash_movimentos: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    ultima_data_movimento: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    atividade_detectada_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    reanalisar_apos: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    ultima_verificacao: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    ultima_analise_automatica: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="monitorando",
+        server_default=text("'monitorando'"),
+    )
+
+    erro_ultimo: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
