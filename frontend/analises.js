@@ -117,7 +117,17 @@
         <article class="metric-card">
           <span>Valor mediano</span>
           <strong id="analyticsMedian">—</strong>
-          <small>Conforme filtro atual</small>
+          <small>Dano moral conforme filtro atual</small>
+        </article>
+        <article class="metric-card">
+          <span>Valor médio</span>
+          <strong id="analyticsAverage">—</strong>
+          <small>Dano moral conforme filtro atual</small>
+        </article>
+        <article class="metric-card">
+          <span>Valores oficiais DJEN</span>
+          <strong id="analyticsDjenCoverage">—</strong>
+          <small>Evidência forte no dispositivo</small>
         </article>
       </div>
 
@@ -145,8 +155,9 @@
               <th>Empresa ré</th>
               <th>Sentença</th>
               <th>Condutas</th>
-              <th>Valor</th>
-              <th>Leitura</th>
+              <th>Dano moral</th>
+              <th>Fonte do valor</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody id="analyticsBody"></tbody>
@@ -258,6 +269,13 @@
       Number(metrics.empresas_reincidentes || 0).toLocaleString("pt-BR");
     $a("analyticsMedian").textContent =
       money(metrics.valor_mediano_centavos);
+    $a("analyticsAverage").textContent =
+      money(metrics.valor_medio_centavos);
+
+    const djen = Number(metrics.valores_djen || 0);
+    const withValue = Number(metrics.processos_com_valor || 0);
+    $a("analyticsDjenCoverage").textContent =
+      `${djen.toLocaleString("pt-BR")} / ${withValue.toLocaleString("pt-BR")}`;
   }
 
   function renderRecurrence(payload) {
@@ -334,7 +352,7 @@
     if (!rows.length) {
       body.innerHTML = `
         <tr>
-          <td colspan="6" class="empty-row">
+          <td colspan="7" class="empty-row">
             Nenhuma análise corresponde aos filtros.
           </td>
         </tr>
@@ -346,6 +364,7 @@
       const params = new URLSearchParams();
       params.set("tribunal", row.tribunal || "");
       params.set("numero", row.numero_processo || "");
+      params.set("origem", "historico");
       const href = `./processo.html?${params.toString()}`;
 
       const conducts = Array.isArray(row.condutas)
@@ -355,7 +374,7 @@
       return `
         <tr class="${row.lida ? "analysis-read" : "analysis-unread"}">
           <td class="process-number">
-            <a href="${esc(href)}">
+            <a class="process-link" href="${esc(href)}">
               ${esc(row.numero_processo || "—")}
             </a>
             <small>${esc(row.tribunal || "—")}</small>
@@ -369,6 +388,19 @@
           <td>${esc(conducts || "Não classificada")}</td>
           <td>${esc(money(row.valor_centavos))}</td>
           <td>
+            ${row.valor_origem === "djen_documental"
+              ? `<span class="grade-badge">DJEN/CNJ</span>
+                 <small>dispositivo · confiança alta</small>`
+              : `<span>${esc(row.valor_fonte || "—")}</span>
+                 <small>${row.valor_centavos == null ? "sem valor" : "fallback da análise salva"}</small>`}
+          </td>
+          <td class="process-actions">
+            <a
+              class="process-view-button"
+              href="${esc(href)}"
+            >
+              Abrir ficha
+            </a>
             <button
               type="button"
               class="secondary analytics-read-button"
@@ -440,9 +472,12 @@
       renderCapacity(payload);
       renderRows(payload);
 
+      const officialValues = Number(payload.metrics?.valores_djen || 0);
       info.textContent =
         `${Number(payload.total || 0).toLocaleString("pt-BR")} ` +
-        `análises correspondem aos filtros atuais.`;
+        `análises correspondem aos filtros atuais. ` +
+        `${officialValues.toLocaleString("pt-BR")} valor(es) de dano moral ` +
+        `usam evidência documental DJEN/CNJ.`;
     } catch (error) {
       console.error(error);
       info.textContent =
@@ -451,6 +486,11 @@
   }
 
   function init() {
+    sessionStorage.setItem(
+      "veredicta_process_origin",
+      "historico"
+    );
+
     createSection();
     loadAnalytics();
   }

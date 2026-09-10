@@ -67,6 +67,329 @@ function normalizeProcessNumber(
 }
 
 
+function setupBackNavigation() {
+  const link = $("backToPrevious");
+
+  if (!link) {
+    return;
+  }
+
+  const params = new URLSearchParams(
+    window.location.search
+  );
+
+  const queryOrigin = String(
+    params.get("origem") || ""
+  ).toLowerCase();
+
+  const storedOrigin = String(
+    sessionStorage.getItem(
+      "veredicta_process_origin"
+    ) || ""
+  ).toLowerCase();
+
+  const origin =
+    queryOrigin ||
+    storedOrigin;
+
+  if (origin === "historico") {
+    link.href = "./historico.html";
+    link.textContent =
+      "← Voltar para o histórico";
+    return;
+  }
+
+  link.href = "./index.html";
+  link.textContent =
+    "← Voltar para a pesquisa";
+}
+
+
+function safeOfficialProcessUrl(value) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const url = new URL(
+      String(value)
+    );
+
+    const hostname =
+      url.hostname.toLowerCase();
+
+    if (
+      url.protocol !== "https:" ||
+      !hostname.endsWith(".jus.br")
+    ) {
+      return "";
+    }
+
+    return url.href;
+  } catch (_) {
+    return "";
+  }
+}
+
+
+function processYearFromCnj(numero) {
+  const digits = String(
+    numero || ""
+  ).replace(/\D/g, "");
+
+  if (digits.length !== 20) {
+    return null;
+  }
+
+  const year = Number(
+    digits.slice(9, 13)
+  );
+
+  if (
+    !Number.isInteger(year) ||
+    year < 2000 ||
+    year > 2100
+  ) {
+    return null;
+  }
+
+  return year;
+}
+
+
+function isoToday() {
+  const now = new Date();
+
+  const yyyy =
+    now.getFullYear();
+
+  const mm =
+    String(
+      now.getMonth() + 1
+    ).padStart(2, "0");
+
+  const dd =
+    String(
+      now.getDate()
+    ).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+
+function buildDjenConsultationUrl() {
+  if (!currentProcessRef) {
+    return "";
+  }
+
+  const tribunal =
+    String(
+      currentProcessRef.tribunal || ""
+    ).trim().toUpperCase();
+
+  const numero =
+    String(
+      currentProcessRef.numero || ""
+    ).replace(/\D/g, "");
+
+  if (!tribunal || numero.length !== 20) {
+    return "";
+  }
+
+  const year =
+    processYearFromCnj(numero) ||
+    new Date().getFullYear();
+
+  const url = new URL(
+    "https://comunica.pje.jus.br/consulta"
+  );
+
+  url.searchParams.set(
+    "siglaTribunal",
+    tribunal
+  );
+
+  url.searchParams.set(
+    "dataDisponibilizacaoInicio",
+    `${year}-01-01`
+  );
+
+  url.searchParams.set(
+    "dataDisponibilizacaoFim",
+    isoToday()
+  );
+
+  url.searchParams.set(
+    "numeroProcesso",
+    numero
+  );
+
+  return url.href;
+}
+
+
+function setupOfficialDjenSearchLink() {
+  const link =
+    $("officialDjenSearchLink");
+
+  const status =
+    $("officialProcessLinkStatus");
+
+  if (!link || !status) {
+    return;
+  }
+
+  const href =
+    buildDjenConsultationUrl();
+
+  if (!href) {
+    link.hidden = true;
+    link.removeAttribute("href");
+    status.textContent =
+      "Não foi possível montar a consulta oficial.";
+    return;
+  }
+
+  link.href = href;
+  link.hidden = false;
+
+  status.textContent =
+    "Consulta oficial disponível no DJEN/CNJ.";
+}
+
+
+function setOfficialDocumentLink(
+  href,
+  statusText
+) {
+  const link =
+    $("officialDocumentLink");
+
+  const status =
+    $("officialProcessLinkStatus");
+
+  if (!link || !status) {
+    return;
+  }
+
+  const safeHref =
+    safeOfficialProcessUrl(href);
+
+  if (safeHref) {
+    link.href = safeHref;
+    link.hidden = false;
+
+    status.textContent =
+      statusText ||
+      "Publicação exata localizada pelo DJEN/CNJ.";
+
+    return;
+  }
+
+  link.hidden = true;
+  link.removeAttribute("href");
+
+  if (statusText) {
+    status.textContent =
+      statusText;
+  }
+}
+
+
+async function loadOfficialProcessLink() {
+  setupOfficialDjenSearchLink();
+
+  if (!currentProcessRef) {
+    setOfficialDocumentLink(
+      "",
+      "Processo não identificado."
+    );
+    return;
+  }
+
+  try {
+    const url =
+      `${API}/api/v1/djen-values/analyses/` +
+      `${encodeURIComponent(
+        currentProcessRef.tribunal
+      )}/` +
+      `${encodeURIComponent(
+        currentProcessRef.numero
+      )}`;
+
+    const response =
+      await fetch(
+        url,
+        {
+          headers:
+            authHeaders()
+        }
+      );
+
+    if (response.status === 404) {
+      setOfficialDocumentLink(
+        "",
+        "Consulta DJEN/CNJ disponível. " +
+        "O Veredicta ainda não salvou uma publicação exata deste processo."
+      );
+      return;
+    }
+
+    const payload =
+      await parseJsonResponse(
+        response
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        payload.detail ||
+        `Erro HTTP ${response.status}`
+      );
+    }
+
+    const evidence =
+      payload.evidencia_dano_moral ||
+      payload.evidencia_dano_material ||
+      payload.evidencia_dano_estetico ||
+      {};
+
+    const principalDocument =
+      payload.documento_principal || {};
+
+    const href =
+      safeOfficialProcessUrl(
+        principalDocument.link ||
+        evidence.link
+      );
+
+    if (!href) {
+      setOfficialDocumentLink(
+        "",
+        "Consulta DJEN/CNJ disponível. " +
+        "Snapshot salvo, mas sem link de publicação exata."
+      );
+      return;
+    }
+
+    setOfficialDocumentLink(
+      href,
+      "Consulta DJEN/CNJ + publicação exata disponíveis."
+    );
+
+  } catch (error) {
+    console.error(
+      "Erro ao carregar publicação oficial:",
+      error
+    );
+
+    setOfficialDocumentLink(
+      "",
+      "Consulta DJEN/CNJ disponível. " +
+      "Não foi possível carregar a publicação exata agora."
+    );
+  }
+}
+
 function getProcessReference() {
   const params =
     new URLSearchParams(
@@ -899,6 +1222,189 @@ function renderList(
 }
 
 
+function renderDjenAnalysis(djen, consulta) {
+  const data = djen || {};
+  const status = String(
+    data.status ||
+    (consulta && consulta.status) ||
+    "nao_consultado"
+  );
+
+  $("djenMoralFirst").textContent =
+    data.valor_dano_moral_primeiro_grau_centavos != null
+      ? formatMoneyFromCents(data.valor_dano_moral_primeiro_grau_centavos)
+      : "—";
+
+  $("djenMoralFinal").textContent =
+    data.valor_dano_moral_final_centavos != null
+      ? formatMoneyFromCents(data.valor_dano_moral_final_centavos)
+      : "—";
+
+  $("djenEstheticFirst").textContent =
+    data.valor_dano_estetico_primeiro_grau_centavos != null
+      ? formatMoneyFromCents(data.valor_dano_estetico_primeiro_grau_centavos)
+      : "—";
+
+  $("djenMaterialFirst").textContent =
+    data.valor_dano_material_primeiro_grau_centavos != null
+      ? formatMoneyFromCents(data.valor_dano_material_primeiro_grau_centavos)
+      : "—";
+
+  const statusLabels = {
+    valor_moral_encontrado: "Valor moral localizado",
+    sem_valor_moral: "Sem valor moral localizado",
+    sem_comunicacoes: "Sem publicação localizada",
+    rate_limit: "DJEN temporariamente limitado",
+    indisponivel_temporariamente: "DJEN indisponível agora",
+    erro_persistencia: "Falha ao salvar consulta",
+    nao_consultado: "Ainda não consultado"
+  };
+
+  $("djenAnalysisStatus").textContent =
+    statusLabels[status] || friendlyValue(status);
+
+  const principalDocument =
+    data.documento_principal || null;
+
+  const documentBox =
+    $("djenDocumentBox");
+
+  const documentLink =
+    $("djenDocumentLink");
+
+  if (principalDocument) {
+    documentBox.hidden = false;
+
+    $("djenDocumentType").textContent =
+      principalDocument.tipo_documento ||
+      "Documento judicial";
+
+    $("djenDocumentDate").textContent =
+      principalDocument.data
+        ? `Disponibilização: ${formatDate(principalDocument.data)}`
+        : "Data não informada";
+
+    $("djenDocumentResult").textContent =
+      principalDocument.resultado_documental ||
+      "Resultado não classificado";
+
+    $("djenDocumentExcerpt").textContent =
+      principalDocument.trecho_dispositivo ||
+      "Trecho decisório não identificado.";
+
+    const documentUrl =
+      safeOfficialProcessUrl(
+        principalDocument.link
+      );
+
+    if (documentUrl) {
+      documentLink.href =
+        documentUrl;
+
+      documentLink.hidden =
+        false;
+
+      setOfficialDocumentLink(
+        documentUrl,
+        "Consulta DJEN/CNJ + teor oficial disponíveis."
+      );
+    } else {
+      documentLink.hidden =
+        true;
+
+      documentLink.removeAttribute(
+        "href"
+      );
+    }
+  } else {
+    documentBox.hidden =
+      true;
+
+    documentLink.hidden =
+      true;
+
+    documentLink.removeAttribute(
+      "href"
+    );
+  }
+
+  const evidence =
+    data.evidencia_dano_moral ||
+    data.evidencia_dano_material ||
+    data.evidencia_dano_estetico ||
+    null;
+
+  const evidenceBox = $("djenEvidenceBox");
+  const evidenceLink = $("djenEvidenceLink");
+
+  if (evidence && evidence.trecho) {
+    evidenceBox.hidden = false;
+    $("djenEvidenceText").textContent = evidence.trecho;
+
+    const meta = [];
+    if (evidence.tipo_documento) meta.push(evidence.tipo_documento);
+    if (evidence.data) meta.push(evidence.data);
+    if (evidence.secao) meta.push(`Seção: ${evidence.secao}`);
+    if (evidence.confianca) meta.push(`Confiança: ${evidence.confianca}`);
+    $("djenEvidenceMeta").textContent = meta.join(" · ");
+
+    const officialUrl = safeOfficialProcessUrl(evidence.link);
+    if (officialUrl) {
+      evidenceLink.href = officialUrl;
+      evidenceLink.hidden = false;
+      setOfficialDocumentLink(
+        officialUrl,
+        "Publicação oficial localizada pelo DJEN/CNJ."
+      );
+    } else {
+      evidenceLink.hidden = true;
+      evidenceLink.removeAttribute("href");
+    }
+  } else {
+    evidenceBox.hidden = true;
+    evidenceLink.hidden = true;
+    evidenceLink.removeAttribute("href");
+  }
+
+  const checked = data.checked_at
+    ? `Última consulta: ${formatDateTime(data.checked_at)}.`
+    : "";
+
+  let notice = checked;
+
+  if (status === "sem_valor_moral") {
+    notice =
+      principalDocument
+        ? (
+          "Publicação decisória localizada. Nenhum valor de dano moral " +
+          "com evidência forte foi localizado no dispositivo. " + checked
+        )
+        : (
+          "Foram encontradas publicações, mas nenhum valor de dano moral " +
+          "com evidência forte no dispositivo. " + checked
+        );
+  } else if (status === "sem_comunicacoes") {
+    notice =
+      "O DJEN/CNJ não retornou publicação pública para este processo. " + checked;
+  } else if (status === "rate_limit") {
+    notice =
+      "A análise jurídica foi salva, mas o DJEN atingiu o limite temporário. " +
+      "Uma nova análise manual pode tentar novamente depois.";
+  } else if (status === "indisponivel_temporariamente") {
+    notice =
+      "A análise jurídica foi salva, mas a consulta ao DJEN não pôde ser " +
+      "concluída agora.";
+  } else if (status === "valor_moral_encontrado") {
+    notice =
+      "Valor documental extraído deterministicamente do dispositivo. " + checked;
+  }
+
+  $("djenAnalysisNotice").textContent =
+    notice ||
+    "A consulta documental é feita quando você solicita a análise.";
+}
+
+
 function showAnalysisEmpty() {
   $("analysisEmpty")
     .hidden = false;
@@ -912,6 +1418,11 @@ function showAnalysisEmpty() {
   $("analysisStatus")
     .textContent =
     "Não analisado";
+
+  renderDjenAnalysis(
+    null,
+    { status: "nao_consultado" }
+  );
 }
 
 
@@ -930,6 +1441,11 @@ function renderAnalysis(
   $("analysisStatus")
     .textContent =
     "Analisado";
+
+  renderDjenAnalysis(
+    analysis.djen,
+    analysis.djen_consulta
+  );
 
   $("analysisMoral")
     .textContent =
@@ -1131,6 +1647,8 @@ async function loadExistingAnalysis() {
       payload
     );
 
+    await loadOfficialProcessLink();
+
   } catch (error) {
     console.error(
       "Erro ao carregar análise:",
@@ -1170,6 +1688,12 @@ async function runAnalysis(
   $("analysisStatus")
     .textContent =
     "Analisando...";
+
+  $("djenAnalysisStatus").textContent =
+    "Consultando após a análise...";
+
+  $("djenAnalysisNotice").textContent =
+    "A análise jurídica será salva mesmo se o DJEN estiver temporariamente indisponível.";
 
   $("analyzeButton")
     .disabled = true;
@@ -1211,6 +1735,8 @@ async function runAnalysis(
     renderAnalysis(
       payload
     );
+
+    await loadOfficialProcessLink();
 
   } catch (error) {
     $("analysisLoading")
@@ -1265,6 +1791,7 @@ function bindEvents() {
 
 async function initializePage() {
   bindEvents();
+  setupBackNavigation();
   checkHealth();
 
   currentProcessRef =
@@ -1294,6 +1821,7 @@ async function initializePage() {
   // A análise armazenada pode ser exibida mesmo se
   // a consulta de detalhe ao DataJud falhar.
   await loadExistingAnalysis();
+  await loadOfficialProcessLink();
 
   if (!loaded) {
     $("analyzeButton").disabled = true;

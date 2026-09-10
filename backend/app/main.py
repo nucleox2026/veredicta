@@ -11,6 +11,8 @@ from .routers import internal_monitor as internal_monitor_router_module
 
 from .routers import analytics as analytics_router_module
 
+from .routers import djen_values as djen_values_router_module
+
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
 app.add_middleware(
@@ -39,3 +41,5 @@ app.include_router(processes_router)
 app.include_router(internal_monitor_router_module.router)
 
 app.include_router(analytics_router_module.router)
+
+app.include_router(djen_values_router_module.router)

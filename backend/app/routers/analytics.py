@@ -20,16 +20,87 @@ router = APIRouter(
 )
 
 
-def _value_cents(analysis: ProcessAnalysis) -> int | None:
-    for value in (
-        analysis.valor_final_centavos,
-        analysis.valor_primeiro_grau_centavos,
-        analysis.valor_arbitrado_juiz_centavos,
-        analysis.valor_indenizacao_centavos,
+def _djen_moral_evidence(analysis: ProcessAnalysis) -> dict[str, Any] | None:
+    snapshot = analysis.djen_valores
+    if not isinstance(snapshot, dict):
+        return None
+
+    awards = snapshot.get("awards")
+    if not isinstance(awards, dict):
+        return None
+
+    history = awards.get("historico_dano_moral")
+    if not isinstance(history, list):
+        return None
+
+    # A jurimetria usa a última fixação documental forte de dano moral.
+    # Documento posterior sem quantia (ex.: quitação) não apaga o histórico.
+    for item in reversed(history):
+        if not isinstance(item, dict):
+            continue
+
+        evidence = item.get("evidencia")
+        if not isinstance(evidence, dict):
+            continue
+
+        value = item.get("valor_centavos")
+        if value is None:
+            continue
+
+        if (
+            evidence.get("secao") == "dispositivo"
+            and evidence.get("confianca") == "alta"
+        ):
+            return {
+                "valor_centavos": int(value),
+                "fonte": "DJEN/CNJ",
+                "origem": "djen_documental",
+                "data": item.get("data"),
+                "tipo_documento": item.get("tipo_documento"),
+                "link": item.get("link") or evidence.get("link"),
+                "trecho": evidence.get("trecho"),
+                "confianca": evidence.get("confianca"),
+                "secao": evidence.get("secao"),
+            }
+
+    return None
+
+
+def _value_info(analysis: ProcessAnalysis) -> dict[str, Any]:
+    djen = _djen_moral_evidence(analysis)
+    if djen is not None:
+        return djen
+
+    # Fallback compatível com a jurimetria anterior. Só é usado quando não
+    # existe evidência documental forte do DJEN para dano moral.
+    for field, value in (
+        ("valor_final_centavos", analysis.valor_final_centavos),
+        ("valor_primeiro_grau_centavos", analysis.valor_primeiro_grau_centavos),
+        ("valor_arbitrado_juiz_centavos", analysis.valor_arbitrado_juiz_centavos),
+        ("valor_indenizacao_centavos", analysis.valor_indenizacao_centavos),
     ):
         if value is not None:
-            return int(value)
-    return None
+            return {
+                "valor_centavos": int(value),
+                "fonte": (
+                    analysis.fonte_valor
+                    or analysis.fonte_valor_arbitrado
+                    or "Análise salva"
+                ),
+                "origem": "analise_salva",
+                "campo": field,
+                "confianca": analysis.confianca_valor,
+            }
+
+    return {
+        "valor_centavos": None,
+        "fonte": None,
+        "origem": "sem_valor",
+    }
+
+
+def _value_cents(analysis: ProcessAnalysis) -> int | None:
+    return _value_info(analysis).get("valor_centavos")
 
 
 def _safe_condutas(analysis: ProcessAnalysis) -> list[str]:
@@ -40,6 +111,8 @@ def _safe_condutas(analysis: ProcessAnalysis) -> list[str]:
 
 
 def _item(analysis: ProcessAnalysis) -> dict[str, Any]:
+    value_info = _value_info(analysis)
+
     return {
         "tribunal": analysis.tribunal,
         "numero_processo": analysis.numero_processo,
@@ -48,9 +121,15 @@ def _item(analysis: ProcessAnalysis) -> dict[str, Any]:
         "resultado": analysis.resultado,
         "tem_sentenca": analysis.tem_sentenca,
         "condutas": _safe_condutas(analysis),
-        "valor_centavos": _value_cents(analysis),
+        "valor_centavos": value_info.get("valor_centavos"),
+        "valor_fonte": value_info.get("fonte"),
+        "valor_origem": value_info.get("origem"),
+        "valor_evidencia": (
+            value_info if value_info.get("origem") == "djen_documental" else None
+        ),
         "confianca_resultado": analysis.confianca_resultado,
         "confianca_valor": analysis.confianca_valor,
+        "valor_confianca": value_info.get("confianca"),
         "lida": bool(analysis.lida),
         "lida_em": analysis.lida_em,
         "analyzed_at": analysis.analyzed_at,
@@ -75,11 +154,16 @@ def _company_stats(analyses):
     result = []
 
     for key, rows in groups.items():
+        value_infos = [_value_info(row) for row in rows]
         values = [
-            value
-            for value in (_value_cents(row) for row in rows)
-            if value is not None
+            info["valor_centavos"]
+            for info in value_infos
+            if info.get("valor_centavos") is not None
         ]
+        djen_values = sum(
+            1 for info in value_infos
+            if info.get("origem") == "djen_documental"
+        )
 
         result.append({
             "empresa": display_names[key],
@@ -88,6 +172,7 @@ def _company_stats(analyses):
             "com_sentenca": sum(
                 1 for row in rows if row.tem_sentenca is True
             ),
+            "valores_djen": djen_values,
             "valor_medio_centavos": (
                 round(sum(values) / len(values)) if values else None
             ),
@@ -103,15 +188,19 @@ def _company_stats(analyses):
 def _conduct_stats(analyses):
     counter = Counter()
     values_by_conduct = defaultdict(list)
+    djen_by_conduct = Counter()
 
     for analysis in analyses:
-        value = _value_cents(analysis)
+        value_info = _value_info(analysis)
+        value = value_info.get("valor_centavos")
 
         for conduct in _safe_condutas(analysis):
             counter[conduct] += 1
 
             if value is not None:
                 values_by_conduct[conduct].append(value)
+            if value_info.get("origem") == "djen_documental":
+                djen_by_conduct[conduct] += 1
 
     result = []
 
@@ -121,6 +210,7 @@ def _conduct_stats(analyses):
         result.append({
             "conduta": conduct,
             "processos": count,
+            "valores_djen": djen_by_conduct[conduct],
             "valor_mediano_centavos": (
                 round(median(values)) if values else None
             ),
@@ -238,10 +328,11 @@ def list_analyses(
     total = len(filtered)
     page = filtered[offset:offset + limit]
 
+    filtered_value_infos = [_value_info(a) for a in filtered]
     filtered_values = [
-        value
-        for value in (_value_cents(a) for a in filtered)
-        if value is not None
+        info["valor_centavos"]
+        for info in filtered_value_infos
+        if info.get("valor_centavos") is not None
     ]
 
     companies_all = _company_stats(analyses)
@@ -268,9 +359,22 @@ def list_analyses(
                 1 for item in companies_filtered
                 if item["processos"] >= 2
             ),
+            "valor_medio_centavos": (
+                round(sum(filtered_values) / len(filtered_values))
+                if filtered_values else None
+            ),
             "valor_mediano_centavos": (
                 round(median(filtered_values))
                 if filtered_values else None
+            ),
+            "processos_com_valor": len(filtered_values),
+            "valores_djen": sum(
+                1 for info in filtered_value_infos
+                if info.get("origem") == "djen_documental"
+            ),
+            "valores_fallback": sum(
+                1 for info in filtered_value_infos
+                if info.get("origem") == "analise_salva"
             ),
         },
 

@@ -29,6 +29,15 @@
     </div>
 
     <div class="auth-area">
+      <nav class="topnav" aria-label="Navegação principal">
+        <a class="topnav-link" href="./index.html">
+          Pesquisa
+        </a>
+        <a class="topnav-link" href="./historico.html">
+          Histórico
+        </a>
+      </nav>
+
       <div class="backend-indicator">
         <span
           class="status-dot"
@@ -48,13 +57,46 @@
 
   <main class="layout">
 
-    <section class="process-navigation">
+    <section class="process-navigation process-navigation--contextual">
       <a
         href="./index.html"
         class="back-link"
+        id="backToPrevious"
       >
-        ← Voltar para a pesquisa
+        ← Voltar
       </a>
+
+      <div class="official-process-access">
+        <a
+          id="officialDjenSearchLink"
+          class="official-process-link"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Consultar comunicações oficiais deste processo no DJEN/CNJ"
+        >
+          Consultar comunicações no DJEN/CNJ ↗
+        </a>
+
+        <a
+          id="officialDocumentLink"
+          class="official-process-link official-process-link--secondary"
+          href="#"
+          target="_blank"
+          rel="noopener noreferrer"
+          hidden
+          title="Abrir a publicação oficial exata localizada pelo Veredicta"
+        >
+          Abrir publicação oficial ↗
+        </a>
+
+        <span
+          id="officialProcessLinkStatus"
+          class="official-process-link-status"
+        >
+          Preparando consulta oficial...
+        </span>
+      </div>
     </section>
 
 
@@ -269,8 +311,8 @@
           </strong>
 
           <p>
-            Consultando os dados processuais e executando
-            a análise solicitada.
+            Consultando DataJud, executando a análise jurídica e
+            verificando publicações oficiais no DJEN/CNJ.
           </p>
         </div>
       </div>
@@ -341,6 +383,114 @@
         </div>
 
 
+        <section
+          id="djenAnalysisSection"
+          class="djen-analysis-section"
+        >
+          <div class="djen-analysis-heading">
+            <div>
+              <span class="detail-label">
+                Valores documentais oficiais
+              </span>
+              <h3>DJEN/CNJ</h3>
+            </div>
+
+            <span
+              id="djenAnalysisStatus"
+              class="coming-badge"
+            >
+              Verificando...
+            </span>
+          </div>
+
+          <div class="djen-analysis-grid">
+            <article class="analysis-item">
+              <span>Dano moral · 1º grau</span>
+              <strong id="djenMoralFirst">—</strong>
+            </article>
+
+            <article class="analysis-item">
+              <span>Dano moral · final</span>
+              <strong id="djenMoralFinal">—</strong>
+            </article>
+
+            <article class="analysis-item">
+              <span>Dano estético · 1º grau</span>
+              <strong id="djenEstheticFirst">—</strong>
+            </article>
+
+            <article class="analysis-item">
+              <span>Dano material · 1º grau</span>
+              <strong id="djenMaterialFirst">—</strong>
+            </article>
+          </div>
+
+          <div
+            id="djenDocumentBox"
+            class="djen-document-box"
+            hidden
+          >
+            <div class="djen-document-heading">
+              <div>
+                <span class="detail-label">
+                  Publicação decisória localizada
+                </span>
+                <strong id="djenDocumentType">—</strong>
+              </div>
+
+              <a
+                id="djenDocumentLink"
+                class="official-process-link"
+                href="#"
+                target="_blank"
+                rel="noopener noreferrer"
+                hidden
+              >
+                Ver teor no PJe ↗
+              </a>
+            </div>
+
+            <div class="djen-document-meta">
+              <span id="djenDocumentDate">—</span>
+              <span id="djenDocumentResult">—</span>
+            </div>
+
+            <p id="djenDocumentExcerpt"></p>
+          </div>
+
+          <div
+            id="djenEvidenceBox"
+            class="djen-analysis-evidence"
+            hidden
+          >
+            <span class="detail-label">
+              Evidência utilizada
+            </span>
+            <p id="djenEvidenceText"></p>
+
+            <div class="djen-analysis-evidence-meta">
+              <span id="djenEvidenceMeta"></span>
+              <a
+                id="djenEvidenceLink"
+                href="#"
+                target="_blank"
+                rel="noopener noreferrer"
+                hidden
+              >
+                Abrir fonte oficial ↗
+              </a>
+            </div>
+          </div>
+
+          <p
+            id="djenAnalysisNotice"
+            class="muted-note"
+          >
+            A consulta documental é feita somente quando você solicita a análise.
+          </p>
+        </section>
+
+
         <div class="analysis-text">
           <span class="detail-label">
             Resumo jurídico
@@ -400,7 +550,7 @@
       <div class="section-heading">
         <div>
           <span class="eyebrow">
-            HISTÓRICO PROCESSUAL
+            MOVIMENTAÇÕES DATAJUD
           </span>
 
           <h2>Movimentações</h2>

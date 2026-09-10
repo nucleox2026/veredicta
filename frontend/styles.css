@@ -1145,3 +1145,308 @@ tbody tr:hover {
     grid-column: auto;
   }
 }
+
+/* ETAPA 8.3 — Valores oficiais DJEN */
+.djen-values-panel{margin-top:24px}
+.djen-values-panel__head,.djen-value-card__head,.djen-value-card__footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.djen-eyebrow{font-size:.78rem;font-weight:700;text-transform:uppercase;opacity:.7;margin:0 0 4px}
+.djen-values-body{display:grid;gap:14px;margin-top:12px}
+.djen-value-card{border:1px solid #d8d8d8;border-radius:14px;padding:16px}
+.djen-value-card__head span{display:block;font-size:.84rem;opacity:.7}
+.djen-source-badge{border:1px solid #d8d8d8;border-radius:999px;padding:5px 9px;font-weight:700}
+.djen-value-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.djen-value-grid div{padding:10px;border-radius:10px;background:rgba(127,127,127,.07)}
+.djen-value-grid small,.djen-value-grid strong{display:block}
+.djen-evidence{font-size:.88rem;line-height:1.45;padding-top:12px;border-top:1px solid #d8d8d8}
+.djen-value-card__footer{font-size:.82rem}
+@media(max-width:840px){.djen-value-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.djen-value-grid{grid-template-columns:1fr}}
+
+/* ===== ETAPA 9.1 — Navegação principal ===== */
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .05);
+}
+
+.topnav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  color: #dce6e0;
+  text-decoration: none;
+  font-size: .8rem;
+  font-weight: 750;
+  transition: background .15s ease, color .15s ease;
+}
+
+.topnav-link:hover {
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+}
+
+.topnav-link.active {
+  background: #eef4ef;
+  color: #173326;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .auth-area {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .auth-area {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .topnav {
+    width: 100%;
+  }
+
+  .topnav-link {
+    flex: 1 1 0;
+  }
+}
+
+/* ===== ETAPA 9.1.1 — Retorno e ações de processo ===== */
+.process-number a,
+.process-number .process-link {
+  color: #245d3b;
+  text-decoration: none;
+  font-weight: 750;
+}
+
+.process-number a:visited,
+.process-number .process-link:visited {
+  color: #245d3b;
+}
+
+.process-number a:hover,
+.process-number .process-link:hover {
+  text-decoration: underline;
+}
+
+.process-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 190px;
+}
+
+.process-view-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #245d3b;
+  border-radius: 8px;
+  background: #245d3b;
+  color: #fff !important;
+  text-decoration: none !important;
+  font-size: .78rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.process-view-button:visited {
+  color: #fff !important;
+}
+
+.process-view-button:hover {
+  background: #1d4b30;
+  border-color: #1d4b30;
+}
+
+/* ===== ETAPA 9.1.2 — Retorno determinístico + acesso PJe ===== */
+.process-navigation--contextual {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.official-process-access {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.official-process-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #245d3b;
+  border-radius: 9px;
+  background: transparent;
+  color: #245d3b;
+  text-decoration: none;
+  font-size: .8rem;
+  font-weight: 800;
+}
+
+.official-process-link:visited {
+  color: #245d3b;
+}
+
+.official-process-link:hover {
+  background: rgba(36, 93, 59, .08);
+}
+
+.official-process-link-status {
+  max-width: 360px;
+  font-size: .78rem;
+  opacity: .7;
+}
+
+@media (max-width: 640px) {
+  .official-process-access {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* ===== ETAPA 9.2 — Ficha unificada + valores DJEN ===== */
+.djen-analysis-section {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px solid rgba(36, 93, 59, .22);
+  border-radius: 14px;
+  background: rgba(36, 93, 59, .035);
+}
+
+.djen-analysis-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.djen-analysis-heading h3 {
+  margin: 3px 0 0;
+}
+
+.djen-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.djen-analysis-evidence {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid rgba(36, 93, 59, .16);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .55);
+}
+
+.djen-analysis-evidence p {
+  margin: 7px 0 10px;
+  line-height: 1.5;
+}
+
+.djen-analysis-evidence-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: .8rem;
+}
+
+.djen-analysis-evidence-meta a {
+  color: #245d3b;
+  font-weight: 800;
+}
+
+@media (max-width: 900px) {
+  .djen-analysis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 540px) {
+  .djen-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== ETAPA 9.1.3B — Consulta DJEN sempre disponível ===== */
+.official-process-link--secondary {
+  background: rgba(36, 93, 59, .08);
+}
+
+.official-process-link--secondary:hover {
+  background: rgba(36, 93, 59, .14);
+}
+
+/* ===== ETAPA 9.2.1 — Documento DJEN mesmo sem valor ===== */
+.djen-document-box {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(36, 93, 59, .18);
+  border-radius: 12px;
+  background: rgba(36, 93, 59, .045);
+}
+
+.djen-document-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.djen-document-heading strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.djen-document-meta {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: .8rem;
+  opacity: .72;
+}
+
+.djen-document-box p {
+  margin: 14px 0 0;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .djen-document-heading {
+    align-items: flex-start;
+  }
+}

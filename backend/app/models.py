@@ -75,6 +75,19 @@ class ProcessAnalysis(Base):
         DateTime(timezone=True), nullable=True
     )
 
+
+
+    # Evidência monetária oficial do DJEN/CNJ.
+    # Mantida em namespace próprio para não ser sobrescrita por reanálise de IA.
+    djen_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    djen_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    djen_ultima_comunicacao_hash: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    djen_valores: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 # =========================================================

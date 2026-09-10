@@ -671,7 +671,7 @@ async function executeSearch(options) {
     $("resultsSubtitle").textContent = "";
     $("resultsBody").innerHTML = `
       <tr>
-        <td colspan="7" class="empty-row">
+        <td colspan="8" class="empty-row">
           Consultando os tribunais selecionados...
         </td>
       </tr>
@@ -856,6 +856,7 @@ function renderRows() {
       const params = new URLSearchParams();
       params.set("tribunal", row.tribunal || "");
       params.set("numero", row.numero_processo || "");
+      params.set("origem", "pesquisa");
 
       const processUrl =
         `./processo.html?${params.toString()}`;
@@ -896,6 +897,16 @@ function renderRows() {
 
           <td>
             ${escapeHtml(subjectsText(row.assuntos) || "—")}
+          </td>
+
+          <td class="process-actions">
+            <a
+              class="process-view-button process-link"
+              href="${escapeHtml(processUrl)}"
+              data-row-index="${index}"
+            >
+              Abrir ficha
+            </a>
           </td>
         </tr>
       `;
@@ -1079,6 +1090,11 @@ function bindEvents() {
 
 
 function initializeApp() {
+  sessionStorage.setItem(
+    "veredicta_process_origin",
+    "pesquisa"
+  );
+
   bindEvents();
   setDefaultDates();
   resetSearchResults();

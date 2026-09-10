@@ -24,6 +24,10 @@ from ..services.legal_ai import (
 from ..services.legal_evidence import (
     extract_legal_evidence,
 )
+from ..services.djen_enrichment import (
+    enrich_analysis_with_djen,
+    serialize_djen_analysis,
+)
 from ..services.tribunals import (
     get_tribunal,
     normalize_tribunal,
@@ -435,6 +439,11 @@ def analysis_to_dict(
             analysis.model_name
         ),
 
+        # Valor documental oficial, separado da inferência da IA.
+        "djen": serialize_djen_analysis(
+            analysis
+        ),
+
         "created_at": (
             analysis.created_at
         ),
@@ -815,8 +824,10 @@ def analyze_lookup_process(
     retorna a análise armazenada.
 
     Se não existir:
-    consulta DataJud, chama IA e
-    salva somente ProcessAnalysis.
+    consulta DataJud, chama IA, salva ProcessAnalysis
+    e então tenta enriquecer a análise com o DJEN/CNJ.
+
+    Falha temporária do DJEN não invalida a análise de IA.
     """
 
     # -----------------------------------------------------
@@ -1257,6 +1268,27 @@ def analyze_lookup_process(
         db.rollback()
         raise
 
-    return analysis_to_dict(
+    # -----------------------------------------------------
+    # 10. Enriquecimento documental DJEN/CNJ
+    # -----------------------------------------------------
+
+    djen_outcome = enrich_analysis_with_djen(
+        db=db,
+        analysis=analysis,
+        numero_processo=numero,
+    )
+
+    payload = analysis_to_dict(
         analysis
     )
+
+    payload["djen_consulta"] = {
+        "ok": djen_outcome.ok,
+        "status": djen_outcome.status,
+        "error_code": djen_outcome.error_code,
+        "retry_after_seconds": (
+            djen_outcome.retry_after_seconds
+        ),
+    }
+
+    return payload
