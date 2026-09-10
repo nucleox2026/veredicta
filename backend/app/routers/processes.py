@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..db import get_db
 from ..models import ProcessAnalysis
+from ..services.analysis_enrichment import build_analysis_metadata
 from ..services.datajud_multi import (
     DataJudError,
     DataJudMultiClient,
@@ -767,6 +768,13 @@ def get_lookup_process_analysis(
             ),
         )
 
+
+    analysis.lida = True
+    analysis.lida_em = datetime.now(
+        timezone.utc
+    )
+    db.commit()
+
     return analysis_to_dict(
         analysis
     )
@@ -1061,11 +1069,31 @@ def analyze_lookup_process(
             ),
         ) from exc
 
+
+    metadata = build_analysis_metadata(
+        source=source,
+        empresa_re=ai_result.empresa_re,
+        resumo=ai_result.resumo,
+        fundamentos=ai_result.fundamentos,
+        evidencias_resultado=(
+            ai_payload["evidencias_veredicta"].get(
+                "evidencias_resultado", []
+            )
+        ),
+    )
+
+    metadata_values = {
+        **metadata,
+        "lida": False,
+        "lida_em": None,
+    }
+
     # -----------------------------------------------------
     # 8. Dados persistidos
     # -----------------------------------------------------
 
     values = {
+        **metadata_values,
         "tribunal": (
             sigla
         ),

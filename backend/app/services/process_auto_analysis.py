@@ -17,6 +17,9 @@ from .legal_evidence import (
 )
 
 
+from .analysis_enrichment import build_analysis_metadata
+
+
 AgentFactory = Callable[..., Any]
 
 
@@ -312,7 +315,27 @@ def analyze_source_and_persist(
         ai_payload
     )
 
+
+    metadata = build_analysis_metadata(
+        source=source,
+        empresa_re=ai_result.empresa_re,
+        resumo=ai_result.resumo,
+        fundamentos=ai_result.fundamentos,
+        evidencias_resultado=(
+            ai_payload["evidencias_veredicta"].get(
+                "evidencias_resultado", []
+            )
+        ),
+    )
+
+    metadata_values = {
+        **metadata,
+        "lida": False,
+        "lida_em": None,
+    }
+
     values = {
+        **metadata_values,
         "tribunal": tribunal,
         "dano_moral": (
             ai_result.dano_moral

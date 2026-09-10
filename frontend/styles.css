@@ -1047,3 +1047,101 @@ tbody tr:hover {
     flex-direction: column;
   }
 }
+
+/* =========================================================
+   JURIMETRIA DAS ANÁLISES
+   ========================================================= */
+
+.analytics-card {
+  margin-top: 24px;
+}
+
+.analytics-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+  align-items: end;
+}
+
+.analytics-filters label {
+  display: grid;
+  gap: 7px;
+}
+
+.analytics-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  min-height: 42px;
+}
+
+.analytics-check input {
+  width: auto;
+}
+
+.analytics-metrics {
+  margin: 18px 0;
+}
+
+.analytics-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+  margin: 22px 0;
+}
+
+.analytics-panels > div,
+.analytics-capacity {
+  border: 1px solid rgba(120, 120, 120, 0.22);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.analytics-capacity {
+  margin-bottom: 22px;
+}
+
+.analytics-stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(120, 120, 120, 0.15);
+}
+
+.analytics-stat-row:last-child {
+  border-bottom: 0;
+}
+
+.analytics-stat-row small {
+  grid-column: 1 / -1;
+  opacity: 0.75;
+}
+
+.analytics-info,
+.empty-note {
+  opacity: 0.78;
+}
+
+.analysis-unread {
+  font-weight: 600;
+}
+
+.analysis-read {
+  opacity: 0.88;
+}
+
+.analytics-read-button {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .analytics-stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-stat-row small {
+    grid-column: auto;
+  }
+}

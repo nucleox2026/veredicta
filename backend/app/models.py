@@ -4,6 +4,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
 
+from sqlalchemy import Boolean, text
+
+
 class ProcessAnalysis(Base):
     __tablename__ = "process_analyses"
 
@@ -38,6 +41,40 @@ class ProcessAnalysis(Base):
     fundamentos: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
     confianca: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Jurimetria e leitura.
+    tem_sentenca: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, index=True
+    )
+    empresa_re_normalizada: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, index=True
+    )
+    condutas: Mapped[list | None] = mapped_column(
+        JSON, nullable=True
+    )
+    lida: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        index=True,
+    )
+    lida_em: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    capacidade_economica_faixa: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
+    capacidade_economica_fonte: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    capacidade_economica_referencia: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    enrichment_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 # =========================================================

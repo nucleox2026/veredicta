@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import ProcessWatch
+from .analysis_enrichment import refresh_analysis_metadata_for_process
 from .process_monitor import observe_process_snapshot
 from .process_watch import sync_watches_from_analyses
 
@@ -466,6 +467,14 @@ def run_watch_cycle(
                     "A consulta do processo "
                     "deve retornar dict."
                 )
+
+
+            refresh_analysis_metadata_for_process(
+                db,
+                watch.tribunal,
+                watch.numero_processo,
+                payload,
+            )
 
             result = (
                 observe_process_snapshot(
