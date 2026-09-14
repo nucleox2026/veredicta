@@ -291,7 +291,55 @@ def analysis_to_dict(
     """
     Converte uma análise armazenada
     no banco para resposta JSON.
+
+    Quando o DJEN/CNJ identificou empresa(s) do polo réu com confiança
+    alta, a resposta da ficha usa essa evidência oficial como prioridade.
     """
+    djen_payload = serialize_djen_analysis(
+        analysis
+    )
+
+    official_companies = (
+        djen_payload.get(
+            "empresas_re_identificadas"
+        )
+        if isinstance(
+            djen_payload,
+            dict,
+        )
+        else []
+    ) or []
+
+    official_company_names = []
+
+    for item in official_companies:
+        if not isinstance(
+            item,
+            dict,
+        ):
+            continue
+
+        name = str(
+            item.get("nome")
+            or ""
+        ).strip()
+
+        if (
+            name
+            and name
+            not in official_company_names
+        ):
+            official_company_names.append(
+                name
+            )
+
+    empresa_re_resposta = (
+        " / ".join(
+            official_company_names
+        )
+        if official_company_names
+        else analysis.empresa_re
+    )
 
     fundamentos = (
         analysis.fundamentos
@@ -345,7 +393,7 @@ def analysis_to_dict(
         ),
 
         "empresa_re": (
-            analysis.empresa_re
+            empresa_re_resposta
         ),
 
         "resultado": (
@@ -440,8 +488,8 @@ def analysis_to_dict(
         ),
 
         # Valor documental oficial, separado da inferência da IA.
-        "djen": serialize_djen_analysis(
-            analysis
+        "djen": (
+            djen_payload
         ),
 
         "created_at": (
@@ -876,9 +924,34 @@ def analyze_lookup_process(
         existing
         and not force
     ):
-        return analysis_to_dict(
+        # O botão "Analisar com IA" é uma ação manual. Mesmo quando a
+        # análise jurídica já está em cache, ainda precisamos executar o
+        # enriquecimento documental DJEN/CNJ para vincular empresa ré,
+        # documento principal e evidências oficiais sem gastar nova chamada
+        # de IA. A simples abertura da ficha continua sem consultar o DJEN.
+        djen_outcome = enrich_analysis_with_djen(
+            db=db,
+            analysis=existing,
+            numero_processo=numero,
+        )
+
+        payload = analysis_to_dict(
             existing
         )
+
+        payload["djen_consulta"] = {
+            "ok": djen_outcome.ok,
+            "status": djen_outcome.status,
+            "error_code": (
+                djen_outcome.error_code
+            ),
+            "retry_after_seconds": (
+                djen_outcome
+                .retry_after_seconds
+            ),
+        }
+
+        return payload
 
     # -----------------------------------------------------
     # 3. Consulta DataJud
