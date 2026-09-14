@@ -26,10 +26,23 @@ from app.services.djen.value_persistence import (
 )
 
 
+def _already_checked(
+    analysis: ProcessAnalysis,
+) -> bool:
+    snapshot = (
+        analysis.djen_valores
+        if isinstance(analysis.djen_valores, dict)
+        else {}
+    )
+
+    return "partes" in snapshot
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Identifica empresas rés pelo DJEN em análises já salvas."
+            "Identifica empresas rés pelo DJEN em análises já salvas, "
+            "sem repetir processos já verificados."
         )
     )
     parser.add_argument(
@@ -38,7 +51,7 @@ def main() -> None:
         default=5,
         help=(
             "Quantidade máxima nesta execução. "
-            "Padrão seguro: 5."
+            "Padrão seguro: 5; máximo: 20."
         ),
     )
     parser.add_argument(
@@ -50,8 +63,8 @@ def main() -> None:
         "--all",
         action="store_true",
         help=(
-            "Inclui registros que já têm empresa_re. "
-            "Sem esta flag, prioriza os sem empresa."
+            "Reprocessa inclusive registros cujo snapshot DJEN já contém "
+            "verificação de partes."
         ),
     )
     parser.add_argument(
@@ -70,6 +83,11 @@ def main() -> None:
 
     db = SessionLocal()
     client = DjenClient()
+
+    processed = 0
+    identified = 0
+    without_company = 0
+    failed = 0
 
     try:
         query = select(
@@ -93,7 +111,7 @@ def main() -> None:
         for analysis in analyses:
             if (
                 not args.all
-                and analysis.empresa_re
+                and _already_checked(analysis)
             ):
                 continue
 
@@ -104,7 +122,7 @@ def main() -> None:
 
         if not selected:
             print(
-                "Nenhuma análise elegível neste lote."
+                "Nenhuma análise pendente de verificação de empresa."
             )
             return
 
@@ -144,6 +162,7 @@ def main() -> None:
                 )
                 break
             except Exception as exc:
+                failed += 1
                 print(
                     "Falha DJEN:",
                     type(exc).__name__,
@@ -154,17 +173,47 @@ def main() -> None:
                 result.items
             )
 
-            # A função persiste snapshot + empresa oficial no objeto.
             persist_djen_snapshot(
                 analysis,
                 result,
                 awards,
             )
 
-            print(
-                "Empresa(s):",
-                analysis.empresa_re or "—",
+            snapshot = (
+                analysis.djen_valores
+                if isinstance(analysis.djen_valores, dict)
+                else {}
             )
+            partes = (
+                snapshot.get("partes")
+                if isinstance(snapshot, dict)
+                else {}
+            )
+            empresas = (
+                partes.get("empresas_re")
+                if isinstance(partes, dict)
+                else []
+            ) or []
+
+            processed += 1
+
+            if empresas:
+                identified += 1
+                nomes = [
+                    str(item.get("nome") or "")
+                    for item in empresas
+                    if isinstance(item, dict)
+                    and item.get("nome")
+                ]
+                print(
+                    "Empresa(s) oficial(is):",
+                    " / ".join(nomes) or "—",
+                )
+            else:
+                without_company += 1
+                print(
+                    "Empresa oficial: —"
+                )
 
             if args.apply:
                 db.commit()
@@ -177,6 +226,21 @@ def main() -> None:
 
             if index < len(selected):
                 time.sleep(0.5)
+
+        print()
+        print("Resumo do lote:")
+        print(
+            f"- verificados: {processed}"
+        )
+        print(
+            f"- empresa identificada: {identified}"
+        )
+        print(
+            f"- sem empresa oficial: {without_company}"
+        )
+        print(
+            f"- falhas: {failed}"
+        )
 
         if not args.apply:
             print()

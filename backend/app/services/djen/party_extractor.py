@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from typing import Any
 
@@ -11,52 +10,46 @@ from ..analysis.enrichment import normalize_company_name
 MAX_HEADER_CHARS = 5000
 
 
+_DOCUMENT_TERMINATORS = (
+    r"AUTOR(?:A)?",
+    r"REQUERENTE",
+    r"R[ÉE]U",
+    r"R[ÉE]",
+    r"REQUERID[OA]",
+    r"RECLAMAD[OA]",
+    r"VISTOS?",
+    r"RELAT[ÓO]RIO",
+    r"FUNDAMENTO",
+    r"DECIDO",
+    r"SENTEN[ÇC]A",
+    r"DECIS[ÃA]O",
+    r"DESPACHO",
+    r"AC[ÓO]RD[ÃA]O",
+    r"DISPOSITIVO",
+    r"INTIMA[ÇC][ÃA]O",
+    r"MANDADO",
+    r"CERTID[ÃA]O",
+    r"EDITAL",
+    r"PROCESSO",
+    r"ADVOGAD[OA]",
+)
+
+_TERMINATOR_GROUP = "|".join(_DOCUMENT_TERMINATORS)
+
+
+def _role_pattern(label: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"\b{label}\s*:\s*"
+        rf"(?P<name>.+?)"
+        rf"(?=\s+(?:{_TERMINATOR_GROUP})\b|$)",
+        re.IGNORECASE,
+    )
+
+
 _ROLE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    (
-        "reu",
-        re.compile(
-            r"\b(?:R[ÉE]U|R[ÉE])\s*:\s*"
-            r"(?P<name>.+?)"
-            r"(?=\s+(?:"
-            r"AUTOR(?:A)?|REQUERENTE|R[ÉE]U|R[ÉE]|"
-            r"REQUERID[OA]|RECLAMAD[OA]|"
-            r"VISTOS?|RELAT[ÓO]RIO|FUNDAMENTO|DECIDO|"
-            r"SENTEN[ÇC]A|DECIS[ÃA]O|AC[ÓO]RD[ÃA]O|"
-            r"DISPOSITIVO"
-            r")\b|$)",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "requerido",
-        re.compile(
-            r"\bREQUERID[OA]\s*:\s*"
-            r"(?P<name>.+?)"
-            r"(?=\s+(?:"
-            r"AUTOR(?:A)?|REQUERENTE|R[ÉE]U|R[ÉE]|"
-            r"REQUERID[OA]|RECLAMAD[OA]|"
-            r"VISTOS?|RELAT[ÓO]RIO|FUNDAMENTO|DECIDO|"
-            r"SENTEN[ÇC]A|DECIS[ÃA]O|AC[ÓO]RD[ÃA]O|"
-            r"DISPOSITIVO"
-            r")\b|$)",
-            re.IGNORECASE,
-        ),
-    ),
-    (
-        "reclamado",
-        re.compile(
-            r"\bRECLAMAD[OA]\s*:\s*"
-            r"(?P<name>.+?)"
-            r"(?=\s+(?:"
-            r"AUTOR(?:A)?|REQUERENTE|R[ÉE]U|R[ÉE]|"
-            r"REQUERID[OA]|RECLAMAD[OA]|"
-            r"VISTOS?|RELAT[ÓO]RIO|FUNDAMENTO|DECIDO|"
-            r"SENTEN[ÇC]A|DECIS[ÃA]O|AC[ÓO]RD[ÃA]O|"
-            r"DISPOSITIVO"
-            r")\b|$)",
-            re.IGNORECASE,
-        ),
-    ),
+    ("reu", _role_pattern(r"(?:R[ÉE]U|R[ÉE])")),
+    ("requerido", _role_pattern(r"REQUERID[OA]")),
+    ("reclamado", _role_pattern(r"RECLAMAD[OA]")),
 )
 
 
@@ -116,6 +109,50 @@ _COMPANY_MARKERS = (
     " MERCANTIL",
 )
 
+_PUBLIC_ENTITY_PREFIXES = (
+    "UNIÃO",
+    "UNIAO",
+    "ESTADO DE ",
+    "MUNICÍPIO DE ",
+    "MUNICIPIO DE ",
+    "PREFEITURA ",
+    "SECRETARIA DE ",
+    "MINISTÉRIO ",
+    "MINISTERIO ",
+    "PROCURADORIA ",
+    "DEFENSORIA ",
+    "TRIBUNAL ",
+    "CÂMARA MUNICIPAL",
+    "CAMARA MUNICIPAL",
+    "ASSEMBLEIA LEGISLATIVA",
+)
+
+_ONLY_DOCUMENT_RE = re.compile(
+    r"^(?:"
+    r"(?:CPF|CNPJ)\s*:\s*)?"
+    r"\d{2,3}\.?\d{3}\.?\d{3}"
+    r"(?:/|-)?\d{2,4}-?\d{0,2}$",
+    re.IGNORECASE,
+)
+
+_TRAILING_METADATA_RE = re.compile(
+    r"\s+(?:"
+    r"DESPACHO|DECIS[ÃA]O|SENTEN[ÇC]A|INTIMA[ÇC][ÃA]O|"
+    r"MANDADO|CERTID[ÃA]O|EDITAL|VISTOS?|PROCESSO"
+    r")\b.*$",
+    re.IGNORECASE,
+)
+
+_TRAILING_ID_RE = re.compile(
+    r"\s+(?:CPF|CNPJ)\s*:\s*[\d./-]+(?:\s+e\s+outros)?\s*$",
+    re.IGNORECASE,
+)
+
+_TRAILING_OTHERS_RE = re.compile(
+    r"\s+(?:e\s+outros|e\s+outr[oa]s)\s*$",
+    re.IGNORECASE,
+)
+
 
 def _clean_spaces(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
@@ -132,29 +169,46 @@ def _safe_date(item: dict[str, Any]) -> str | None:
     return str(value)[:10]
 
 
-def _looks_like_company(name: str) -> bool:
-    upper = f" {_clean_spaces(name).upper()} "
-
-    if re.search(
-        r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b",
-        upper,
-    ):
-        return True
-
-    return any(
-        marker in upper
-        for marker in _COMPANY_MARKERS
-    )
-
-
 def _clean_party_name(name: str) -> str:
     cleaned = _clean_spaces(name)
+
+    # Remove cabeçalhos/documentos que ficaram colados ao nome.
+    cleaned = _TRAILING_METADATA_RE.sub("", cleaned)
+
+    # CPF/CNPJ anexado ao fim é metadado, não parte da razão social.
+    cleaned = _TRAILING_ID_RE.sub("", cleaned)
+    cleaned = _TRAILING_OTHERS_RE.sub("", cleaned)
+
     cleaned = re.sub(
         r"^[\-–—:;,.\s]+|[\-–—:;,\s]+$",
         "",
         cleaned,
     )
+
     return cleaned.strip()
+
+
+def _is_public_entity(name: str) -> bool:
+    upper = _clean_spaces(name).upper()
+    return upper.startswith(_PUBLIC_ENTITY_PREFIXES)
+
+
+def _looks_like_company(name: str) -> bool:
+    clean = _clean_party_name(name)
+    upper = f" {clean.upper()} "
+
+    # Um CNPJ/CPF sem razão social não é "nome da empresa".
+    if not clean or _ONLY_DOCUMENT_RE.fullmatch(clean):
+        return False
+
+    # Órgãos públicos podem estar no polo réu, mas não são empresas.
+    if _is_public_entity(clean):
+        return False
+
+    return any(
+        marker in upper
+        for marker in _COMPANY_MARKERS
+    )
 
 
 def _party_evidence(
@@ -163,11 +217,13 @@ def _party_evidence(
     role: str,
     item: dict[str, Any],
 ) -> dict[str, Any]:
+    clean_name = _clean_party_name(name)
+
     return {
-        "nome": name,
-        "nome_normalizado": normalize_company_name(name),
+        "nome": clean_name,
+        "nome_normalizado": normalize_company_name(clean_name),
         "papel": role,
-        "eh_empresa": _looks_like_company(name),
+        "eh_empresa": _looks_like_company(clean_name),
         "confianca": "alta",
         "fonte": "DJEN/CNJ",
         "data_documento": _safe_date(item),
@@ -178,14 +234,56 @@ def _party_evidence(
     }
 
 
+def _build_result(
+    partes_re: list[dict[str, Any]],
+) -> dict[str, Any]:
+    empresas_by_name: dict[str, dict[str, Any]] = {}
+
+    for row in partes_re:
+        if not row.get("eh_empresa"):
+            continue
+
+        normalized = row.get("nome_normalizado")
+
+        if not normalized:
+            continue
+
+        empresas_by_name[str(normalized)] = row
+
+    empresas_re = sorted(
+        empresas_by_name.values(),
+        key=lambda row: str(
+            row.get("nome_normalizado") or ""
+        ),
+    )
+
+    principal = (
+        empresas_re[0]
+        if len(empresas_re) == 1
+        else None
+    )
+
+    return {
+        "metodo": "rotulo_explicito_polo_reu",
+        "verificado": True,
+        "verificado_em": datetime.now(timezone.utc).isoformat(),
+        "partes_re": partes_re,
+        "empresas_re": empresas_re,
+        "empresa_re_principal": principal,
+    }
+
+
 def extract_defendant_parties(
     communications: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Extrai partes do polo réu apenas com rótulo explícito no DJEN.
+    """Extrai empresas do polo réu com evidência explícita no DJEN/CNJ.
 
-    Não inferimos polo a partir de um nome solto. Só aceitamos cabeçalhos
-    explícitos como RÉU:, REQUERIDO: ou RECLAMADO:. A classificação como
-    empresa exige marcador empresarial objetivo no próprio nome.
+    Regras:
+    - exige rótulo de polo: RÉU, REQUERIDO ou RECLAMADO;
+    - remove metadados/cabeçalhos colados ao nome;
+    - CNPJ/CPF isolado não vira nome empresarial;
+    - órgão público não é classificado como empresa;
+    - sem inferência por nome solto.
     """
     found: list[dict[str, Any]] = []
 
@@ -220,7 +318,6 @@ def extract_defendant_parties(
                     )
                 )
 
-    # Deduplica preservando a evidência mais recente.
     found.sort(
         key=lambda row: (
             row.get("data_documento") or "",
@@ -235,6 +332,7 @@ def extract_defendant_parties(
             row.get("nome_normalizado")
             or _clean_spaces(row.get("nome")).upper()
         )
+
         by_key[
             (
                 str(row.get("papel") or ""),
@@ -242,39 +340,52 @@ def extract_defendant_parties(
             )
         ] = row
 
-    partes_re = list(by_key.values())
+    return _build_result(
+        list(by_key.values())
+    )
 
-    empresas_by_name: dict[str, dict[str, Any]] = {}
 
-    for row in partes_re:
-        if not row.get("eh_empresa"):
+def sanitize_saved_party_snapshot(
+    value: Any,
+) -> dict[str, Any]:
+    """Reclassifica um snapshot já salvo sem fazer nova consulta ao DJEN."""
+    if not isinstance(value, dict):
+        return _build_result([])
+
+    rows = value.get("partes_re")
+    if not isinstance(rows, list):
+        rows = []
+
+    cleaned_rows: list[dict[str, Any]] = []
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for original in rows:
+        if not isinstance(original, dict):
             continue
 
-        normalized = row.get("nome_normalizado")
+        row = dict(original)
+        name = _clean_party_name(
+            str(row.get("nome") or "")
+        )
 
-        if not normalized:
+        if not name:
             continue
 
-        empresas_by_name[
-            str(normalized)
+        row["nome"] = name
+        row["nome_normalizado"] = normalize_company_name(name)
+        row["eh_empresa"] = _looks_like_company(name)
+
+        normalized = (
+            row.get("nome_normalizado")
+            or name.upper()
+        )
+
+        by_key[
+            (
+                str(row.get("papel") or ""),
+                str(normalized),
+            )
         ] = row
 
-    empresas_re = sorted(
-        empresas_by_name.values(),
-        key=lambda row: str(
-            row.get("nome_normalizado") or ""
-        ),
-    )
-
-    principal = (
-        empresas_re[0]
-        if len(empresas_re) == 1
-        else None
-    )
-
-    return {
-        "metodo": "rotulo_explicito_polo_reu",
-        "partes_re": partes_re,
-        "empresas_re": empresas_re,
-        "empresa_re_principal": principal,
-    }
+    cleaned_rows.extend(by_key.values())
+    return _build_result(cleaned_rows)
