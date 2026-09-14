@@ -1,7 +1,7 @@
 (() => {
   const API_BASE = String(
     (window.VEREDICTA_CONFIG || {}).API_BASE_URL ||
-      "http://127.0.0.1:8000"
+      "https://veredicta-api.onrender.com"
   ).replace(/\/$/, "");
 
   const $a = (id) => document.getElementById(id);

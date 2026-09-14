@@ -492,7 +492,7 @@ class DataJudMultiClient:
         tribunal: str,
         date_from: str,
         date_to: str,
-        subject_code: int = 9992,
+        subject_code: int = 0,
         page_size: int = (
             DEFAULT_PAGE_SIZE
         ),
@@ -664,7 +664,7 @@ class DataJudMultiClient:
         tribunais: list[str],
         date_from: str,
         date_to: str,
-        subject_code: int = 9992,
+        subject_code: int = 0,
         page_size_per_tribunal: int = 20,
         search_after_by_tribunal: dict[
             str,

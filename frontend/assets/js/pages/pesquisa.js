@@ -1,7 +1,7 @@
 const CONFIG = window.VEREDICTA_CONFIG || {};
 
 const API = String(
-  CONFIG.API_BASE_URL || "http://127.0.0.1:8000"
+  CONFIG.API_BASE_URL || "https://veredicta-api.onrender.com"
 ).replace(/\/$/, "");
 
 const DJEN_PROXY =
@@ -1403,7 +1403,7 @@ function clearSearch() {
   renderTribunals();
   setDefaultDates();
 
-  $("subjectCode").value = "9992";
+  $("subjectCode").value = "0";
   $("pageSizePerTribunal").value = "10";
 
   resetSearchResults();
