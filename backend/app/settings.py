@@ -3,9 +3,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "JurisIA API"
+    app_name: str = "Veredicta API"
     environment: str = "development"
-    database_url: str = "sqlite:///./jurisia_dev.db"
+    database_url: str = "sqlite:///./veredicta_dev.db"
     cors_origins: str = "http://localhost:5500"
 
     datajud_api_key: str = ""

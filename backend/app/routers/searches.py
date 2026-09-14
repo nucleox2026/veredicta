@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from ..auth import current_user
-from ..services.datajud_multi import (
+from ..services.datajud.client import (
     DataJudError,
     DataJudMultiClient,
 )

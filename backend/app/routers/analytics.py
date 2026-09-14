@@ -110,14 +110,102 @@ def _safe_condutas(analysis: ProcessAnalysis) -> list[str]:
     return [str(item) for item in value if str(item).strip()]
 
 
+def _analysis_companies(
+    analysis: ProcessAnalysis,
+) -> list[dict[str, str]]:
+    snapshot = (
+        analysis.djen_valores
+        if isinstance(analysis.djen_valores, dict)
+        else {}
+    )
+
+    partes = snapshot.get("partes")
+    empresas = (
+        partes.get("empresas_re")
+        if isinstance(partes, dict)
+        else None
+    )
+
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    if isinstance(empresas, list):
+        for item in empresas:
+            if not isinstance(item, dict):
+                continue
+
+            nome = str(
+                item.get("nome") or ""
+            ).strip()
+            normalizada = str(
+                item.get("nome_normalizado") or ""
+            ).strip()
+
+            if not nome or not normalizada:
+                continue
+
+            if normalizada in seen:
+                continue
+
+            seen.add(normalizada)
+            result.append({
+                "empresa": nome,
+                "empresa_normalizada": normalizada,
+            })
+
+    if result:
+        return result
+
+    if analysis.empresa_re_normalizada:
+        return [{
+            "empresa": (
+                analysis.empresa_re
+                or analysis.empresa_re_normalizada
+            ),
+            "empresa_normalizada": (
+                analysis.empresa_re_normalizada
+            ),
+        }]
+
+    return []
+
+
+def _analysis_company_keys(
+    analysis: ProcessAnalysis,
+) -> set[str]:
+    return {
+        item["empresa_normalizada"]
+        for item in _analysis_companies(analysis)
+        if item.get("empresa_normalizada")
+    }
+
+
 def _item(analysis: ProcessAnalysis) -> dict[str, Any]:
     value_info = _value_info(analysis)
+
+    companies = _analysis_companies(
+        analysis
+    )
+
+    company_names = [
+        item["empresa"]
+        for item in companies
+    ]
 
     return {
         "tribunal": analysis.tribunal,
         "numero_processo": analysis.numero_processo,
-        "empresa_re": analysis.empresa_re,
-        "empresa_re_normalizada": analysis.empresa_re_normalizada,
+        "empresa_re": (
+            " / ".join(company_names)
+            if company_names
+            else analysis.empresa_re
+        ),
+        "empresa_re_normalizada": (
+            companies[0]["empresa_normalizada"]
+            if len(companies) == 1
+            else analysis.empresa_re_normalizada
+        ),
+        "empresas_re": companies,
         "resultado": analysis.resultado,
         "tem_sentenca": analysis.tem_sentenca,
         "condutas": _safe_condutas(analysis),
@@ -144,12 +232,16 @@ def _company_stats(analyses):
     display_names = {}
 
     for analysis in analyses:
-        key = analysis.empresa_re_normalizada
-        if not key:
-            continue
+        for company in _analysis_companies(
+            analysis
+        ):
+            key = company["empresa_normalizada"]
 
-        groups[key].append(analysis)
-        display_names.setdefault(key, analysis.empresa_re or key)
+            groups[key].append(analysis)
+            display_names.setdefault(
+                key,
+                company["empresa"],
+            )
 
     result = []
 
@@ -291,11 +383,13 @@ def list_analyses(
         ).all()
     )
 
-    company_counts = Counter(
-        analysis.empresa_re_normalizada
-        for analysis in analyses
-        if analysis.empresa_re_normalizada
-    )
+    company_counts = Counter()
+
+    for analysis in analyses:
+        for key in _analysis_company_keys(
+            analysis
+        ):
+            company_counts[key] += 1
 
     filtered = []
 
@@ -309,7 +403,12 @@ def list_analyses(
         if leitura == "nao_lidas" and analysis.lida:
             continue
 
-        if empresa and analysis.empresa_re_normalizada != empresa:
+        if (
+            empresa
+            and empresa not in _analysis_company_keys(
+                analysis
+            )
+        ):
             continue
 
         condutas = _safe_condutas(analysis)
@@ -318,9 +417,14 @@ def list_analyses(
             continue
 
         if somente_reincidentes:
-            key = analysis.empresa_re_normalizada
+            keys = _analysis_company_keys(
+                analysis
+            )
 
-            if not key or company_counts[key] < min_reincidencia:
+            if not any(
+                company_counts[key] >= min_reincidencia
+                for key in keys
+            ):
                 continue
 
         filtered.append(analysis)

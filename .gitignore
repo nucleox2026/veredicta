@@ -40,3 +40,14 @@ build/
 *.key
 credentials.json
 service-account*.json
+# Ferramentas de qualidade
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Backups locais de etapas/manutenção
+*.bak_etapa*
+
+# Backups locais de manutenção
+*.bak_*

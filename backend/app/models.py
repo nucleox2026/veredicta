@@ -1,10 +1,8 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, DateTime, Integer, JSON, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
+
 from .db import Base
-
-
-from sqlalchemy import Boolean, text
 
 
 class ProcessAnalysis(Base):
@@ -76,7 +74,6 @@ class ProcessAnalysis(Base):
     )
 
 
-
     # Evidência monetária oficial do DJEN/CNJ.
     # Mantida em namespace próprio para não ser sobrescrita por reanálise de IA.
     djen_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -93,8 +90,6 @@ class ProcessAnalysis(Base):
 # =========================================================
 # MONITORAMENTO AUTOMÁTICO — CONTROLE POR PROCESSO
 # =========================================================
-
-from sqlalchemy import Boolean, UniqueConstraint, text
 
 
 class ProcessWatch(Base):

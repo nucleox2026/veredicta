@@ -8,7 +8,7 @@ from fastapi import (
     status,
 )
 
-from ..services.process_monitor_http import (
+from ..services.monitoring.http_trigger import (
     monitor_is_running,
     monitor_token_configured,
     run_monitor_task,

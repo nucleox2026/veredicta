@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
 import argparse
 import json
 import re
@@ -7,11 +10,16 @@ from dataclasses import asdict
 
 from sqlalchemy import select
 
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
 from app.db import SessionLocal
 from app.models import ProcessAnalysis
-from app.services.djen_client import DjenClient, DjenRateLimitError
-from app.services.djen_value_extractor import extract_process_awards
-from app.services.djen_value_persistence import (
+from app.services.djen.client import DjenClient, DjenRateLimitError
+from app.services.djen.value_extractor import extract_process_awards
+from app.services.djen.value_persistence import (
     build_djen_persistence_preview,
     persist_djen_snapshot,
 )

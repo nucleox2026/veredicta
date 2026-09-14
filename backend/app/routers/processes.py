@@ -12,19 +12,19 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..db import get_db
 from ..models import ProcessAnalysis
-from ..services.analysis_enrichment import build_analysis_metadata
-from ..services.datajud_multi import (
+from ..services.analysis.enrichment import build_analysis_metadata
+from ..services.datajud.client import (
     DataJudError,
     DataJudMultiClient,
 )
-from ..services.legal_ai import (
+from ..services.analysis.legal_ai import (
     PROMPT_VERSION,
     VeredictaLegalAI,
 )
-from ..services.legal_evidence import (
+from ..services.analysis.legal_evidence import (
     extract_legal_evidence,
 )
-from ..services.djen_enrichment import (
+from ..services.djen.enrichment import (
     enrich_analysis_with_djen,
     serialize_djen_analysis,
 )

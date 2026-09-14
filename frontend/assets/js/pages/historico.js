@@ -79,7 +79,7 @@
         </label>
 
         <label>
-          Empresa
+          Empresa ré identificada
           <select id="filterCompany">
             <option value="">Todas</option>
           </select>

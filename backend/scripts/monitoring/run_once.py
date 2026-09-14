@@ -50,7 +50,7 @@ def main() -> None:
 
     backend = Path(
         __file__
-    ).resolve().parent
+    ).resolve().parents[2]
 
     sys.path.insert(
         0,
@@ -58,11 +58,11 @@ def main() -> None:
     )
 
     from app.db import SessionLocal
-    from app.services.datajud_watch_adapter import (
+    from app.services.datajud.watch_adapter import (
         build_datajud_client,
         fetch_process_from_datajud,
     )
-    from app.services.process_watch_worker import (
+    from app.services.monitoring.worker import (
         run_watch_cycle,
     )
 
@@ -84,7 +84,7 @@ def main() -> None:
         from app.settings import (
             get_settings,
         )
-        from app.services.process_auto_analysis import (
+        from app.services.analysis.auto_analysis import (
             analyze_source_and_persist,
         )
 

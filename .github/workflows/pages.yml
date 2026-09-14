@@ -1,4 +1,4 @@
-name: Deploy JurisIA frontend to GitHub Pages
+name: Deploy Veredicta frontend to GitHub Pages
 
 on:
   push:
