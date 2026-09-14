@@ -68,7 +68,7 @@ Copy-Item .env.example .env
 uvicorn app.main:app --reload
 ```
 
-API local: `http://127.0.0.1:8000`
+API local: `http://127.0.0.1:8000`  
 Swagger: `http://127.0.0.1:8000/docs`
 
 ## Frontend local

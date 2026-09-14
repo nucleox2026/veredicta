@@ -107,6 +107,27 @@ _COMPANY_MARKERS = (
     " MAGAZINE",
     " LOJAS ",
     " MERCANTIL",
+    # Operadoras/administradoras de saúde que muitas vezes aparecem no DJEN
+    # somente pela marca, sem LTDA/S.A. no nome exibido.
+    " UNIMED",
+    "UNIMED ",
+    " HAPVIDA",
+    "HAPVIDA ",
+    " AMIL",
+    "AMIL ",
+    " SULAMERICA",
+    " SUL AMERICA",
+    " NOTREDAME",
+    " INTERMEDICA",
+    " INTERMÉDICA",
+    " BRADESCO SAUDE",
+    " BRADESCO SAÚDE",
+    " PREVENT SENIOR",
+    " MEDSENIOR",
+    " CARE PLUS",
+    " CASSI",
+    " GEAP",
+    " ASSEFAZ",
 )
 
 _PUBLIC_ENTITY_PREFIXES = (
@@ -211,6 +232,52 @@ def _looks_like_company(name: str) -> bool:
     )
 
 
+_PASSIVE_POLES = {
+    "P",
+    "PASSIVO",
+    "POLO PASSIVO",
+    "REU",
+    "RÉU",
+    "REQUERIDO",
+    "RECLAMADO",
+}
+
+
+def _is_passive_pole(value: Any) -> bool:
+    normalized = _clean_spaces(value).upper()
+    return normalized in _PASSIVE_POLES
+
+
+def _structured_passive_recipients(
+    item: dict[str, Any],
+) -> list[str]:
+    """Lê o polo passivo estruturado retornado pelo DJEN.
+
+    O endpoint público retorna `destinatarios` com `nome` e `polo`.
+    Esse dado é mais confiável do que depender de o texto conter literalmente
+    "RÉU:" / "REQUERIDO:".
+    """
+    rows = item.get("destinatarios")
+    if not isinstance(rows, list):
+        return []
+
+    output: list[str] = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if not _is_passive_pole(row.get("polo")):
+            continue
+
+        name = _clean_party_name(row.get("nome") or "")
+        if not name or len(name) < 3 or len(name) > 300:
+            continue
+
+        output.append(name)
+
+    return output
+
+
 def _party_evidence(
     *,
     name: str,
@@ -264,7 +331,7 @@ def _build_result(
     )
 
     return {
-        "metodo": "rotulo_explicito_polo_reu",
+        "metodo": "destinatarios_djen_ou_rotulo_polo_reu",
         "verificado": True,
         "verificado_em": datetime.now(timezone.utc).isoformat(),
         "partes_re": partes_re,
@@ -291,6 +358,19 @@ def extract_defendant_parties(
         if not isinstance(item, dict):
             continue
 
+        # 1) Primeiro usa a estrutura oficial do próprio DJEN.
+        # Ex.: destinatarios=[{"nome": "BANCO ...", "polo": "P"}].
+        for name in _structured_passive_recipients(item):
+            found.append(
+                _party_evidence(
+                    name=name,
+                    role="polo_passivo_djen",
+                    item=item,
+                )
+            )
+
+        # 2) Mantém o parser textual como fallback para comunicações antigas
+        # ou documentos em que o polo não venha estruturado.
         raw = _clean_spaces(item.get("texto"))
         if not raw:
             continue

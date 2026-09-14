@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-DJEN_BASE_URL = "https://comunicaapi.pje.jus.br/api/v1"
+DJEN_BASE_URL = "https://veredicta-djen-br.guilherme-moussalem.workers.dev"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_ITEMS_PER_PAGE = 100
 DEFAULT_MAX_PAGES = 5
@@ -86,7 +86,19 @@ class DjenClient:
             "pagina": pagina,
             "itensPorPagina": itens_por_pagina,
         }
-        url = f"{self.base_url}/comunicacao?{urlencode(params)}"
+        # O backend do Veredicta usa o Worker brasileiro como proxy do DJEN.
+        # O Worker expõe /comunicacoes (plural); a API oficial usa
+        # /api/v1/comunicacao (singular). Aceitamos os dois formatos para
+        # manter compatibilidade com overrides por variável de ambiente.
+        base = self.base_url.rstrip("/")
+        if base.endswith("/comunicacoes") or base.endswith("/comunicacao"):
+            endpoint = base
+        elif "workers.dev" in base:
+            endpoint = f"{base}/comunicacoes"
+        else:
+            endpoint = f"{base}/comunicacao"
+
+        url = f"{endpoint}?{urlencode(params)}"
         request = Request(
             url,
             method="GET",
