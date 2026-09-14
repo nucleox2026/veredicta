@@ -22,6 +22,8 @@ let searchSummary = [];
 let totalFound = 0;
 let errorCount = 0;
 let searchInProgress = false;
+let companyEnrichmentInProgress = false;
+let companyRetryTimer = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -434,6 +436,7 @@ async function loadTribunals() {
       (lastSearchRequest || loadedRows.length)
     ) {
       renderSearchResults();
+      scheduleCompanyEnrichment(0);
     }
   } catch (error) {
     $("tribunalSelectionInfo").textContent =
@@ -638,6 +641,238 @@ function mergeUniqueRows(currentRows, newRows) {
 }
 
 
+
+function companyStatusIsFinal(row) {
+  const status = String(
+    row && row.empresa_re_status
+      ? row.empresa_re_status
+      : ""
+  );
+
+  return (
+    status === "found" ||
+    status === "not_found" ||
+    status === "error"
+  );
+}
+
+
+function companyCellHtml(row) {
+  const names = Array.isArray(row.empresa_re)
+    ? row.empresa_re.filter(Boolean)
+    : (
+        row.empresa_re
+          ? [row.empresa_re]
+          : []
+      );
+
+  if (names.length) {
+    const source = row.empresa_re_fonte
+      ? `<small>${escapeHtml(row.empresa_re_fonte)}</small>`
+      : "";
+
+    return `
+      <strong>${escapeHtml(names.join(" / "))}</strong>
+      ${source}
+    `;
+  }
+
+  const status = String(
+    row.empresa_re_status || ""
+  );
+
+  if (
+    status === "loading" ||
+    status === "pending" ||
+    !status
+  ) {
+    return `
+      <span class="muted-text">
+        Identificando no DJEN...
+      </span>
+    `;
+  }
+
+  if (status === "rate_limited") {
+    return `
+      <span class="muted-text">
+        Aguardando DJEN...
+      </span>
+    `;
+  }
+
+  if (status === "error") {
+    return `
+      <span class="muted-text">
+        Não disponível
+      </span>
+    `;
+  }
+
+  return "—";
+}
+
+
+function updateCompanyRows(items) {
+  const byKey = new Map();
+
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    byKey.set(
+      `${item.tribunal || ""}:${item.numero_processo || ""}`,
+      item
+    );
+  });
+
+  loadedRows.forEach((row) => {
+    const item = byKey.get(rowKey(row));
+
+    if (!item) {
+      return;
+    }
+
+    const names = Array.isArray(item.empresas_re)
+      ? item.empresas_re.filter(Boolean)
+      : [];
+
+    row.empresa_re = names;
+    row.empresa_re_status =
+      item.status || "not_found";
+    row.empresa_re_fonte =
+      item.fonte || "";
+    row.empresa_re_link =
+      item.link || "";
+  });
+}
+
+
+function scheduleCompanyEnrichment(delayMs = 0) {
+  if (companyRetryTimer) {
+    clearTimeout(companyRetryTimer);
+    companyRetryTimer = null;
+  }
+
+  companyRetryTimer = setTimeout(() => {
+    companyRetryTimer = null;
+    enrichPendingCompanies();
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+
+async function enrichPendingCompanies() {
+  if (companyEnrichmentInProgress) {
+    return;
+  }
+
+  const pending = loadedRows.filter((row) => {
+    if (companyStatusIsFinal(row)) {
+      return false;
+    }
+
+    const status = String(
+      row.empresa_re_status || ""
+    );
+
+    return (
+      !status ||
+      status === "pending" ||
+      status === "loading" ||
+      status === "rate_limited"
+    );
+  });
+
+  if (!pending.length) {
+    return;
+  }
+
+  const batch = pending.slice(0, 8);
+
+  batch.forEach((row) => {
+    row.empresa_re_status = "loading";
+  });
+
+  companyEnrichmentInProgress = true;
+  renderRows();
+
+  try {
+    const response = await fetch(
+      `${API}/api/v1/searches/companies`,
+      {
+        method: "POST",
+        headers: Object.assign(
+          {
+            "Content-Type": "application/json"
+          },
+          authHeaders()
+        ),
+        body: JSON.stringify({
+          items: batch.map((row) => ({
+            tribunal: row.tribunal,
+            numero_processo: row.numero_processo
+          }))
+        })
+      }
+    );
+
+    const payload = await parseJsonResponse(response);
+
+    if (!response.ok) {
+      throw new Error(
+        payload.detail ||
+        `Erro HTTP ${response.status}`
+      );
+    }
+
+    updateCompanyRows(payload.items || []);
+
+    const returnedKeys = new Set(
+      (payload.items || []).map((item) => {
+        return `${item.tribunal || ""}:${item.numero_processo || ""}`;
+      })
+    );
+
+    batch.forEach((row) => {
+      if (
+        !returnedKeys.has(rowKey(row)) &&
+        row.empresa_re_status === "loading"
+      ) {
+        row.empresa_re_status = "error";
+      }
+    });
+
+    renderRows();
+    saveSearchState();
+
+    const retryAfter = Number(
+      payload.retry_after_seconds || 0
+    );
+
+    if (retryAfter > 0) {
+      scheduleCompanyEnrichment(
+        Math.max(retryAfter, 5) * 1000
+      );
+    } else {
+      scheduleCompanyEnrichment(250);
+    }
+  } catch (error) {
+    console.warn(
+      "Falha ao identificar empresas na pesquisa:",
+      error
+    );
+
+    batch.forEach((row) => {
+      if (row.empresa_re_status === "loading") {
+        row.empresa_re_status = "error";
+      }
+    });
+
+    renderRows();
+    saveSearchState();
+  } finally {
+    companyEnrichmentInProgress = false;
+  }
+}
+
+
 async function executeSearch(options) {
   const append = Boolean(options && options.append);
 
@@ -673,7 +908,7 @@ async function executeSearch(options) {
     $("resultsSubtitle").textContent = "";
     $("resultsBody").innerHTML = `
       <tr>
-        <td colspan="8" class="empty-row">
+        <td colspan="9" class="empty-row">
           Consultando os tribunais selecionados...
         </td>
       </tr>
@@ -766,6 +1001,7 @@ async function executeSearch(options) {
     renderSearchResults();
     showPartialErrors(payload.errors || []);
     saveSearchState();
+    scheduleCompanyEnrichment(0);
   } catch (error) {
     showError(
       error.message ||
@@ -846,7 +1082,7 @@ function renderRows() {
   if (!loadedRows.length) {
     $("resultsBody").innerHTML = `
       <tr>
-        <td colspan="7" class="empty-row">
+        <td colspan="9" class="empty-row">
           Nenhum registro encontrado com os parâmetros informados.
         </td>
       </tr>
@@ -897,6 +1133,10 @@ function renderRows() {
 
           <td>
             ${escapeHtml(row.orgao_julgador_nome || "—")}
+          </td>
+
+          <td class="company-cell">
+            ${companyCellHtml(row)}
           </td>
 
           <td>
@@ -1011,6 +1251,7 @@ function downloadCsv() {
     "grau",
     "classe",
     "orgao_julgador",
+    "empresa_re",
     "assuntos"
   ];
 
@@ -1024,6 +1265,11 @@ function downloadCsv() {
       row.grau,
       row.classe_nome,
       row.orgao_julgador_nome,
+      (
+        Array.isArray(row.empresa_re)
+          ? row.empresa_re.join(" / ")
+          : (row.empresa_re || "")
+      ),
       subjectsText(row.assuntos)
     ].map(csvCell);
 

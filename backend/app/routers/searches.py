@@ -2,11 +2,22 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.orm import Session
 
 from ..auth import current_user
+from ..db import get_db
 from ..services.datajud.client import (
     DataJudError,
     DataJudMultiClient,
+)
+
+from ..services.djen.client import (
+    DjenClient,
+    DjenError,
+    DjenRateLimitError,
+)
+from ..services.djen.search_company_enrichment import (
+    lookup_company_for_search,
 )
 
 from ..services.tribunals import (
@@ -80,6 +91,24 @@ class MultiTribunalSearchRequest(
 
             return normalized
 
+
+
+class SearchCompanyItem(
+    BaseModel
+):
+    tribunal: str
+    numero_processo: str
+
+
+class SearchCompanyRequest(
+    BaseModel
+):
+    items: list[SearchCompanyItem] = Field(
+        min_length=1,
+        max_length=8,
+    )
+
+
 @router.get("/tribunals")
 async def get_available_tribunals(
     _user: dict = Depends(current_user),
@@ -90,6 +119,120 @@ async def get_available_tribunals(
         "total": len(tribunais),
         "items": tribunais,
     }
+
+
+
+@router.post("/companies")
+def search_result_companies(
+    request: SearchCompanyRequest,
+
+    db: Session = Depends(
+        get_db
+    ),
+
+    _user: dict = Depends(
+        current_user
+    ),
+):
+    client = DjenClient()
+    output = []
+    retry_after_seconds = None
+    items = list(request.items)
+
+    for index, item in enumerate(items):
+        try:
+            tribunal = normalize_tribunal(
+                item.tribunal
+            )
+
+            result = lookup_company_for_search(
+                db=db,
+                tribunal=tribunal,
+                numero_processo=item.numero_processo,
+                client=client,
+            )
+
+            output.append(result.to_dict())
+
+            if (
+                result.rate_limit_remaining
+                is not None
+                and result.rate_limit_remaining <= 1
+                and index < len(items) - 1
+            ):
+                retry_after_seconds = 60
+
+                for pending in items[index + 1:]:
+                    output.append(
+                        {
+                            "tribunal": normalize_tribunal(
+                                pending.tribunal
+                            ),
+                            "numero_processo": (
+                                pending.numero_processo
+                            ),
+                            "status": "rate_limited",
+                            "empresas_re": [],
+                            "fonte": None,
+                            "link": None,
+                            "rate_limit_remaining": (
+                                result.rate_limit_remaining
+                            ),
+                        }
+                    )
+
+                break
+
+        except DjenRateLimitError as exc:
+            retry_after_seconds = max(
+                int(exc.retry_after_seconds or 60),
+                5,
+            )
+
+            for pending in items[index:]:
+                output.append(
+                    {
+                        "tribunal": normalize_tribunal(
+                            pending.tribunal
+                        ),
+                        "numero_processo": (
+                            pending.numero_processo
+                        ),
+                        "status": "rate_limited",
+                        "empresas_re": [],
+                        "fonte": None,
+                        "link": None,
+                        "rate_limit_remaining": 0,
+                    }
+                )
+
+            break
+
+        except (
+            DjenError,
+            ValueError,
+        ) as exc:
+            output.append(
+                {
+                    "tribunal": str(
+                        item.tribunal or ""
+                    ).upper(),
+                    "numero_processo": (
+                        item.numero_processo
+                    ),
+                    "status": "error",
+                    "empresas_re": [],
+                    "fonte": None,
+                    "link": None,
+                    "error": str(exc),
+                }
+            )
+
+    return {
+        "items": output,
+        "retry_after_seconds": retry_after_seconds,
+    }
+
 
 @router.post("/multi")
 def multi_tribunal_search(
