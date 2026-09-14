@@ -53,10 +53,11 @@
         <h2>Pesquisa jurídica multi-tribunal</h2>
 
         <p>
-          Pesquise processos diretamente no DataJud, em um ou vários
-          Tribunais de Justiça, sem pré-carregar ou gravar os resultados
-          da pesquisa. A análise por IA ocorre somente quando solicitada
-          na ficha individual do processo.
+          Pesquise processos de saúde suplementar e planos de saúde
+          diretamente no DataJud, em um ou vários Tribunais de Justiça.
+          A pesquisa não grava os resultados. O nome da operadora
+          (como Hapvida, Unimed, Amil e outras) é confirmado pelo
+          DJEN/CNJ somente quando a análise é solicitada na ficha.
         </p>
       </div>
     </section>
@@ -66,7 +67,7 @@
       <article class="metric-card">
         <span>Registros encontrados</span>
         <strong id="metricTotal">—</strong>
-        <small>Total informado pelo DataJud</small>
+        <small>Recorte de planos de saúde / saúde suplementar</small>
       </article>
 
       <article class="metric-card">
@@ -154,16 +155,25 @@
         </label>
 
         <label>
-          Assunto
+          Assunto indenizatório
           <select id="subjectCode">
-            <option value="9992" selected>
+            <option value="9992">
               Indenização por Dano Moral — Direito Público (9992)
             </option>
             <option value="10433">
               Indenização por Dano Moral — Direito Civil (10433)
             </option>
-            <option value="7779">
+            <option value="7779" selected>
               Indenização por Dano Moral — Direito do Consumidor (7779)
+            </option>
+          </select>
+        </label>
+
+        <label>
+          Segmento
+          <select id="healthSegment" disabled>
+            <option selected>
+              Planos de Saúde / Saúde Suplementar
             </option>
           </select>
         </label>

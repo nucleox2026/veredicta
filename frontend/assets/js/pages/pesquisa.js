@@ -5,7 +5,7 @@ const API = String(
 ).replace(/\/$/, "");
 
 const SEARCH_STATE_KEY =
-  "veredicta_search_state_v3";
+  "veredicta_search_state_v4_health";
 
 const SELECTED_PROCESS_KEY =
   "veredicta_selected_process_v3";
@@ -547,6 +547,7 @@ function buildInitialSearchRequest() {
     date_from: $("dateFrom").value,
     date_to: $("dateTo").value,
     subject_code: Number($("subjectCode").value),
+    health_plans_only: true,
     page_size_per_tribunal: Number(
       $("pageSizePerTribunal").value
     ),
@@ -584,6 +585,7 @@ function buildLoadMoreRequest() {
     date_from: lastSearchRequest.date_from,
     date_to: lastSearchRequest.date_to,
     subject_code: lastSearchRequest.subject_code,
+    health_plans_only: true,
     page_size_per_tribunal:
       lastSearchRequest.page_size_per_tribunal,
     search_after_by_tribunal: cursorMap
@@ -784,10 +786,12 @@ function renderSearchResults() {
   $("resultsCard").hidden = false;
 
   $("resultsTitle").textContent =
-    `${formatNumber(totalFound)} registros encontrados no DataJud`;
+    `${formatNumber(totalFound)} processos de saúde suplementar encontrados`;
 
   $("resultsSubtitle").textContent =
-    `${formatNumber(loadedRows.length)} registros únicos carregados nesta tela.`;
+    `${formatNumber(loadedRows.length)} registros carregados. ` +
+    "Recorte DataJud: planos de saúde / saúde suplementar; " +
+    "a operadora é confirmada pelo DJEN na ficha após a análise.";
 
   renderMetrics();
   renderTribunalSummary();

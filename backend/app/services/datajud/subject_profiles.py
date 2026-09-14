@@ -86,3 +86,52 @@ def build_subject_filter(
             "assuntos.codigo": code,
         }
     }
+
+
+# Recorte nacional de saúde suplementar / planos de saúde.
+HEALTH_PLAN_SUBJECT_CODES: tuple[int, ...] = (
+    12482,  # Saúde suplementar
+    12486,  # Planos de saúde
+    12487,  # Fornecimento de medicamentos
+    12488,  # Reajuste contratual
+    12489,  # Tratamento médico-hospitalar
+    12490,  # Fornecimento de insumos
+    6233,   # Planos de Saúde (TPU histórica)
+    12222,  # Fornecimento de medicamentos (histórica)
+    12223,  # Tratamento médico-hospitalar (histórica)
+    12224,  # UTI/UCI - saúde suplementar (histórica)
+    12225,  # Reajuste contratual (histórica)
+)
+
+
+def build_health_plan_filter() -> dict:
+    """Filtro público para saúde suplementar/planos de saúde.
+
+    A API Pública do DataJud não expõe os nomes das partes. Por isso,
+    a Pesquisa faz o recorte pelos assuntos TPU, enquanto o nome da
+    operadora é confirmado posteriormente pelo DJEN/CNJ na ficha.
+    """
+    return {
+        "bool": {
+            "should": [
+                {
+                    "terms": {
+                        "assuntos.codigo": list(
+                            HEALTH_PLAN_SUBJECT_CODES
+                        )
+                    }
+                },
+                {
+                    "match_phrase": {
+                        "assuntos.nome": "Planos de Saúde"
+                    }
+                },
+                {
+                    "match_phrase": {
+                        "assuntos.nome": "Saúde Suplementar"
+                    }
+                },
+            ],
+            "minimum_should_match": 1,
+        }
+    }

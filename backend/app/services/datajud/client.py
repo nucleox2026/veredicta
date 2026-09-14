@@ -12,6 +12,7 @@ from .guard import (
     DATAJUD_GUARD,
 )
 from .subject_profiles import (
+    build_health_plan_filter,
     build_subject_filter,
     get_subject_profile,
 )
@@ -496,6 +497,7 @@ class DataJudMultiClient:
             DEFAULT_PAGE_SIZE
         ),
         search_after: list | None = None,
+        health_plans_only: bool = False,
     ) -> dict:
         tribunal = normalize_tribunal(
             tribunal
@@ -534,6 +536,11 @@ class DataJudMultiClient:
         if subject_filter:
             filters.append(
                 subject_filter
+            )
+
+        if health_plans_only:
+            filters.append(
+                build_health_plan_filter()
             )
 
         payload = {
@@ -639,6 +646,10 @@ class DataJudMultiClient:
                 else None
             ),
 
+            "health_plans_only": bool(
+                health_plans_only
+            ),
+
             "items": items,
 
             "next_search_after": (
@@ -659,6 +670,7 @@ class DataJudMultiClient:
             str,
             list,
         ] | None = None,
+        health_plans_only: bool = False,
     ) -> dict:
         """
         Pesquisa vários tribunais em paralelo.
@@ -715,6 +727,7 @@ class DataJudMultiClient:
                     subject_code,
                     page_size_per_tribunal,
                     cursor,
+                    health_plans_only,
                 )
 
                 futures[
@@ -887,5 +900,9 @@ class DataJudMultiClient:
 
             "next_search_after_by_tribunal": (
                 next_search_after_by_tribunal
+            ),
+
+            "health_plans_only": bool(
+                health_plans_only
             ),
         }

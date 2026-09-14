@@ -34,6 +34,8 @@ class MultiTribunalSearchRequest(
 
         subject_code: int | None = 9992
 
+        health_plans_only: bool = True
+
         page_size_per_tribunal: int = Field(
             default=10,
             ge=1,
@@ -133,6 +135,10 @@ def multi_tribunal_search(
 
             subject_code=(
                 request.subject_code
+            ),
+
+            health_plans_only=(
+                request.health_plans_only
             ),
 
             page_size_per_tribunal=(
@@ -269,5 +275,9 @@ def multi_tribunal_search(
             result[
                 "next_search_after_by_tribunal"
             ]
+        ),
+
+        "health_plans_only": bool(
+            request.health_plans_only
         ),
     }
