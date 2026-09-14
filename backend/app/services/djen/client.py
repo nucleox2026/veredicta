@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -59,7 +60,17 @@ class DjenClient:
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         user_agent: str = "Veredicta/1.0 (DJEN public consultation)",
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        configured_base_url = (
+            os.getenv("DJEN_BASE_URL")
+            if base_url == DJEN_BASE_URL
+            else None
+        )
+
+        self.base_url = (
+            configured_base_url
+            or base_url
+        ).rstrip("/")
+
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
 
