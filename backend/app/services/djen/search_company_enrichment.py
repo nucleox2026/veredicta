@@ -229,8 +229,8 @@ def lookup_company_for_search(
 
     djen_result = client.get_communications(
         numero,
-        itens_por_pagina=100,
-        max_pages=1,
+        itens_por_pagina=50,
+        max_pages=3,
         pause_between_pages_seconds=0,
     )
 

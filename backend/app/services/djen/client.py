@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 DJEN_BASE_URL = "https://veredicta-djen-br.guilherme-moussalem.workers.dev"
 DEFAULT_TIMEOUT_SECONDS = 20
-DEFAULT_ITEMS_PER_PAGE = 100
+DEFAULT_ITEMS_PER_PAGE = 50
 DEFAULT_MAX_PAGES = 5
 
 
@@ -139,8 +139,8 @@ class DjenClient:
         max_pages: int = DEFAULT_MAX_PAGES,
         pause_between_pages_seconds: float = 0.15,
     ) -> DjenResult:
-        if itens_por_pagina not in (5, 100):
-            raise ValueError("itens_por_pagina deve ser 5 ou 100.")
+        if not 1 <= itens_por_pagina <= 50:
+            raise ValueError("itens_por_pagina deve estar entre 1 e 50.")
         if max_pages < 1:
             raise ValueError("max_pages deve ser >= 1.")
 
