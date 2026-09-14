@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 
 PROMPT_VERSION = "veredicta-evidencias-v1"
 
+DEFAULT_GEMINI_FALLBACK_MODELS = (
+    "gemini-3.5-flash-lite",
+)
+
 
 class LegalAnalysisOutput(BaseModel):
     dano_moral: Literal[
@@ -92,6 +96,60 @@ class VeredictaLegalAI:
         )
 
         self.model = model
+
+        self.fallback_models = tuple(
+            fallback_model
+            for fallback_model in DEFAULT_GEMINI_FALLBACK_MODELS
+            if fallback_model != model
+        )
+
+        self.last_model_used: str | None = None
+
+
+    @staticmethod
+    def _is_quota_or_rate_limit_error(
+        exc: Exception,
+    ) -> bool:
+        """
+        Detecta erros 429 / RESOURCE_EXHAUSTED do Gemini.
+
+        A SDK pode expor o status em atributos diferentes
+        dependendo da versão, então mantemos também a
+        verificação textual como fallback.
+        """
+
+        status_code = (
+            getattr(exc, "status_code", None)
+            or getattr(exc, "code", None)
+        )
+
+        message = str(exc).upper()
+
+        return (
+            status_code == 429
+            or "RESOURCE_EXHAUSTED" in message
+            or "QUOTA EXCEEDED" in message
+            or "RATE LIMIT" in message
+        )
+
+
+    def _generate_with_model(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        system_instruction: str,
+    ):
+        return self.client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema=LegalAnalysisOutput,
+                temperature=0.1,
+            ),
+        )
 
 
     def analyze_process(
@@ -348,33 +406,54 @@ Produza exclusivamente a saída estruturada exigida
 pelo schema.
 """
 
-        response = (
-            self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
+        models_to_try = (
+            self.model,
+            *self.fallback_models,
+        )
+
+        exhausted_models: list[str] = []
+
+        for model in models_to_try:
+            try:
+                response = self._generate_with_model(
+                    model=model,
+                    prompt=prompt,
                     system_instruction=(
                         system_instruction
                     ),
-                    response_mime_type=(
-                        "application/json"
-                    ),
-                    response_schema=(
-                        LegalAnalysisOutput
-                    ),
-                    temperature=0.1,
-                ),
+                )
+
+            except Exception as exc:
+                if self._is_quota_or_rate_limit_error(
+                    exc
+                ):
+                    exhausted_models.append(model)
+                    continue
+
+                raise
+
+            if not response.text:
+                raise RuntimeError(
+                    f"O Gemini não retornou conteúdo no modelo {model}."
+                )
+
+            self.last_model_used = model
+
+            return (
+                LegalAnalysisOutput
+                .model_validate_json(
+                    response.text
+                )
             )
+
+        models_text = ", ".join(
+            exhausted_models
+            or models_to_try
         )
 
-        if not response.text:
-            raise RuntimeError(
-                "O Gemini não retornou conteúdo."
-            )
-
-        return (
-            LegalAnalysisOutput
-            .model_validate_json(
-                response.text
-            )
+        raise RuntimeError(
+            "Limite de uso da API Gemini atingido para os modelos "
+            f"{models_text}. O Veredicta tentou automaticamente o "
+            "modelo alternativo, mas ele também está sem capacidade "
+            "disponível neste momento."
         )
