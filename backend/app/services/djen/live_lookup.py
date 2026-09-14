@@ -133,64 +133,36 @@ def _public_party_rows(rows: Any) -> list[dict[str, Any]]:
     return output
 
 
-def lookup_live_djen(
-    numero_processo: str,
+def parse_djen_communications(
+    communications: list[dict[str, Any]],
     *,
-    client: DjenClient | None = None,
+    checked_at: str | None = None,
 ) -> dict[str, Any]:
-    """Consulta documental leve para a ficha processual.
+    """Extrai partes e valores de comunicações já obtidas do DJEN.
 
-    Não chama IA e não persiste nada. Serve para preencher automaticamente
-    partes e valores documentais sempre que a ficha for aberta.
+    Este helper permite que o navegador consulte o Worker diretamente e envie
+    apenas o JSON para o backend interpretar. Assim a ficha continua funcionando
+    mesmo quando o Render não consegue alcançar o Worker do Cloudflare.
     """
-    djen_client = client or DjenClient()
-    checked_at = datetime.now(timezone.utc).isoformat()
+    items = [item for item in (communications or []) if isinstance(item, dict)]
+    checked = checked_at or datetime.now(timezone.utc).isoformat()
 
-    try:
-        result = djen_client.get_communications(
-            numero_processo,
-            itens_por_pagina=50,
-            max_pages=5,
-        )
-    except DjenRateLimitError as exc:
-        return {
-            "ok": False,
-            "status": "rate_limit",
-            "checked_at": checked_at,
-            "retry_after_seconds": exc.retry_after_seconds,
-            "partes": {"ativo": [], "passivo": []},
-        }
-    except DjenError:
-        return {
-            "ok": False,
-            "status": "indisponivel_temporariamente",
-            "checked_at": checked_at,
-            "partes": {"ativo": [], "passivo": []},
-        }
-    except Exception:
-        return {
-            "ok": False,
-            "status": "indisponivel_temporariamente",
-            "checked_at": checked_at,
-            "partes": {"ativo": [], "passivo": []},
-        }
-
-    awards = extract_process_awards(result.items)
-    parties = extract_process_parties(result.items)
-    documents = build_relevant_documents(result.items, awards)
+    awards = extract_process_awards(items)
+    parties = extract_process_parties(items)
+    documents = build_relevant_documents(items, awards)
 
     moral_first = _history_value(awards, "historico_dano_moral", last=False)
     moral_final = _history_value(awards, "historico_dano_moral", last=True)
     esthetic_first = _history_value(awards, "historico_dano_estetico", last=False)
     material_first = _history_value(awards, "historico_dano_material", last=False)
     cause_value = (
-        _latest_value_da_causa_from_communications(result.items)
+        _latest_value_da_causa_from_communications(items)
         or _latest_value_da_causa(awards)
     )
 
     if moral_first or moral_final:
         status = "valor_moral_encontrado"
-    elif result.items:
+    elif items:
         status = "sem_valor_moral"
     else:
         status = "sem_comunicacoes"
@@ -198,9 +170,9 @@ def lookup_live_djen(
     return {
         "ok": True,
         "status": status,
-        "checked_at": checked_at,
+        "checked_at": checked,
         "fonte": "DJEN/CNJ",
-        "comunicacoes": len(result.items),
+        "comunicacoes": len(items),
         "partes": {
             "ativo": _public_party_rows(parties.get("ativo")),
             "passivo": _public_party_rows(parties.get("passivo")),
@@ -229,3 +201,50 @@ def lookup_live_djen(
         "documentos_relevantes": documents.get("documentos") or [],
         "publicacao_decisoria_localizada": bool(documents.get("documentos")),
     }
+
+
+def lookup_live_djen(
+    numero_processo: str,
+    *,
+    client: DjenClient | None = None,
+) -> dict[str, Any]:
+    """Consulta documental leve para a ficha processual."""
+    djen_client = client or DjenClient()
+    checked_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        result = djen_client.get_communications(
+            numero_processo,
+            itens_por_pagina=50,
+            max_pages=5,
+        )
+    except DjenRateLimitError as exc:
+        return {
+            "ok": False,
+            "status": "rate_limit",
+            "checked_at": checked_at,
+            "retry_after_seconds": exc.retry_after_seconds,
+            "partes": {"ativo": [], "passivo": []},
+            "erro": str(exc),
+        }
+    except DjenError as exc:
+        return {
+            "ok": False,
+            "status": "indisponivel_temporariamente",
+            "checked_at": checked_at,
+            "partes": {"ativo": [], "passivo": []},
+            "erro": str(exc),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "indisponivel_temporariamente",
+            "checked_at": checked_at,
+            "partes": {"ativo": [], "passivo": []},
+            "erro": f"{type(exc).__name__}: {exc}",
+        }
+
+    return parse_djen_communications(
+        result.items,
+        checked_at=checked_at,
+    )

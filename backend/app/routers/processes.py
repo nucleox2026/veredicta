@@ -31,6 +31,7 @@ from ..services.djen.enrichment import (
 )
 from ..services.djen.live_lookup import (
     lookup_live_djen,
+    parse_djen_communications,
 )
 from ..services.tribunals import (
     get_tribunal,
@@ -863,6 +864,56 @@ def lookup_process(
 
         "fonte": "DataJud",
     }
+
+
+
+@router.post(
+    "/lookup/{tribunal}/{numero_processo}/djen/parse"
+)
+def parse_lookup_djen_communications(
+    tribunal: str,
+    numero_processo: str,
+    payload: dict,
+    _user: dict = Depends(current_user),
+):
+    """Interpreta comunicações do DJEN obtidas pelo próprio navegador.
+
+    O frontend usa esta rota como fallback quando o Render não consegue acessar
+    o Worker. Nenhuma chamada externa é feita aqui; apenas extração determinística
+    de partes, empresa ré e valores do JSON recebido.
+    """
+    sigla = normalize_tribunal(tribunal)
+    try:
+        get_tribunal(sigla)
+        numero = normalize_process_number(numero_processo)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        raise HTTPException(
+            status_code=400,
+            detail="Campo 'items' deve ser uma lista de comunicações DJEN.",
+        )
+
+    if len(items) > 250:
+        raise HTTPException(
+            status_code=400,
+            detail="Máximo de 250 comunicações por interpretação.",
+        )
+
+    filtered: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_numero = normalize_process_number(
+            str(item.get("numero_processo") or numero)
+        )
+        if item_numero != numero:
+            continue
+        filtered.append(item)
+
+    return parse_djen_communications(filtered)
 
 
 # =========================================================
