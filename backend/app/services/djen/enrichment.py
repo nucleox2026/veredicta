@@ -44,7 +44,7 @@ def enrich_analysis_with_djen(
     try:
         result = djen_client.get_communications(
             numero_processo,
-            itens_por_pagina=100,
+            itens_por_pagina=50,
             max_pages=5,
         )
     except DjenRateLimitError as exc:

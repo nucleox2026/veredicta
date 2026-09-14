@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 from fastapi import (
     APIRouter,
@@ -27,6 +28,9 @@ from ..services.analysis.legal_evidence import (
 from ..services.djen.enrichment import (
     enrich_analysis_with_djen,
     serialize_djen_analysis,
+)
+from ..services.djen.live_lookup import (
+    lookup_live_djen,
 )
 from ..services.tribunals import (
     get_tribunal,
@@ -165,6 +169,56 @@ def extract_parties(
     return result
 
 
+def merge_parties(
+    primary: dict,
+    secondary: dict,
+) -> dict:
+    """Mescla partes de DataJud e DJEN sem duplicar nomes."""
+    output = {
+        "ativo": [],
+        "passivo": [],
+        "outros": [],
+    }
+
+    for key in ("ativo", "passivo", "outros"):
+        seen: set[str] = set()
+        for source in (primary, secondary):
+            rows = source.get(key) if isinstance(source, dict) else None
+            if not isinstance(rows, list):
+                continue
+
+            for row in rows:
+                if isinstance(row, str):
+                    item = {
+                        "nome": row,
+                        "documento": None,
+                        "tipo_pessoa": None,
+                    }
+                elif isinstance(row, dict):
+                    item = {
+                        "nome": row.get("nome"),
+                        "documento": row.get("documento"),
+                        "tipo_pessoa": row.get("tipo_pessoa"),
+                        "fonte": row.get("fonte"),
+                        "papel": row.get("papel"),
+                    }
+                else:
+                    continue
+
+                name = str(item.get("nome") or "").strip()
+                if not name:
+                    continue
+
+                dedupe_key = " ".join(name.upper().split())
+                if dedupe_key in seen:
+                    continue
+
+                seen.add(dedupe_key)
+                output[key].append(item)
+
+    return output
+
+
 def compact_movements(
     movements: list[dict],
     limit: int = 30,
@@ -261,6 +315,28 @@ def compact_movements(
         )
 
     return compacted
+
+
+def money_to_centavos(value) -> int | None:
+    """Converte valor monetário do DataJud (double/reais) para centavos."""
+    if value is None or value == "":
+        return None
+
+    try:
+        if isinstance(value, str):
+            raw = value.strip().replace("R$", "").strip()
+            if "," in raw:
+                raw = raw.replace(".", "").replace(",", ".")
+            amount = Decimal(raw)
+        else:
+            amount = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+    if amount < 0:
+        return None
+
+    return int((amount * 100).quantize(Decimal("1")))
 
 
 def normalize_process_number(
@@ -685,6 +761,32 @@ def lookup_process(
         or []
     )
 
+    datajud_parties = extract_parties(source)
+    datajud_cause_value = money_to_centavos(
+        source.get("valorCausa")
+        or source.get("valor_causa")
+    )
+
+    djen_live = lookup_live_djen(
+        result["numero_processo"]
+    )
+
+    if (
+        datajud_cause_value is not None
+        and djen_live.get("valor_da_causa_centavos") is None
+    ):
+        djen_live["valor_da_causa_centavos"] = datajud_cause_value
+        djen_live["fonte_valor_da_causa"] = "DataJud"
+    djen_parties = (
+        djen_live.get("partes")
+        if isinstance(djen_live, dict)
+        else {}
+    ) or {}
+    merged_parties = merge_parties(
+        datajud_parties,
+        djen_parties,
+    )
+
     return {
         "id": None,
 
@@ -721,11 +823,19 @@ def lookup_process(
             or []
         ),
 
-        "partes": (
-            extract_parties(
-                source
-            )
-        ),
+        "partes": merged_parties,
+
+        "valor_causa_centavos": datajud_cause_value,
+
+        "djen": djen_live,
+
+        "djen_consulta": {
+            "ok": bool(djen_live.get("ok")),
+            "status": djen_live.get("status"),
+            "retry_after_seconds": djen_live.get(
+                "retry_after_seconds"
+            ),
+        },
 
         "movimentos_total": (
             len(movimentos)

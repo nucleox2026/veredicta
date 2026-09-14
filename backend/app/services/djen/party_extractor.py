@@ -13,6 +13,10 @@ MAX_HEADER_CHARS = 5000
 _DOCUMENT_TERMINATORS = (
     r"AUTOR(?:A)?",
     r"REQUERENTE",
+    r"RECLAMANTE",
+    r"EXEQUENTE",
+    r"DEMANDANTE",
+    r"IMPETRANTE",
     r"R[ÉE]U",
     r"R[ÉE]",
     r"REQUERID[OA]",
@@ -46,10 +50,20 @@ def _role_pattern(label: str) -> re.Pattern[str]:
     )
 
 
-_ROLE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+_ACTIVE_ROLE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("autor", _role_pattern(r"AUTOR(?:A)?")),
+    ("requerente", _role_pattern(r"REQUERENTE")),
+    ("reclamante", _role_pattern(r"RECLAMANTE")),
+    ("exequente", _role_pattern(r"EXEQUENTE")),
+    ("demandante", _role_pattern(r"DEMANDANTE")),
+    ("impetrante", _role_pattern(r"IMPETRANTE")),
+)
+
+_PASSIVE_ROLE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("reu", _role_pattern(r"(?:R[ÉE]U|R[ÉE])")),
     ("requerido", _role_pattern(r"REQUERID[OA]")),
     ("reclamado", _role_pattern(r"RECLAMAD[OA]")),
+    ("executado", _role_pattern(r"EXECUTAD[OA]")),
 )
 
 
@@ -232,6 +246,19 @@ def _looks_like_company(name: str) -> bool:
     )
 
 
+_ACTIVE_POLES = {
+    "A",
+    "ATIVO",
+    "POLO ATIVO",
+    "AUTOR",
+    "AUTORA",
+    "REQUERENTE",
+    "RECLAMANTE",
+    "EXEQUENTE",
+    "DEMANDANTE",
+    "IMPETRANTE",
+}
+
 _PASSIVE_POLES = {
     "P",
     "PASSIVO",
@@ -240,7 +267,13 @@ _PASSIVE_POLES = {
     "RÉU",
     "REQUERIDO",
     "RECLAMADO",
+    "EXECUTADO",
 }
+
+
+def _is_active_pole(value: Any) -> bool:
+    normalized = _clean_spaces(value).upper()
+    return normalized in _ACTIVE_POLES
 
 
 def _is_passive_pole(value: Any) -> bool:
@@ -248,25 +281,23 @@ def _is_passive_pole(value: Any) -> bool:
     return normalized in _PASSIVE_POLES
 
 
-def _structured_passive_recipients(
+def _structured_recipients(
     item: dict[str, Any],
+    *,
+    active: bool,
 ) -> list[str]:
-    """Lê o polo passivo estruturado retornado pelo DJEN.
-
-    O endpoint público retorna `destinatarios` com `nome` e `polo`.
-    Esse dado é mais confiável do que depender de o texto conter literalmente
-    "RÉU:" / "REQUERIDO:".
-    """
+    """Lê destinatários estruturados do DJEN por polo."""
     rows = item.get("destinatarios")
     if not isinstance(rows, list):
         return []
 
     output: list[str] = []
+    matcher = _is_active_pole if active else _is_passive_pole
 
     for row in rows:
         if not isinstance(row, dict):
             continue
-        if not _is_passive_pole(row.get("polo")):
+        if not matcher(row.get("polo")):
             continue
 
         name = _clean_party_name(row.get("nome") or "")
@@ -277,6 +308,13 @@ def _structured_passive_recipients(
 
     return output
 
+
+def _structured_active_recipients(item: dict[str, Any]) -> list[str]:
+    return _structured_recipients(item, active=True)
+
+
+def _structured_passive_recipients(item: dict[str, Any]) -> list[str]:
+    return _structured_recipients(item, active=False)
 
 def _party_evidence(
     *,
@@ -291,6 +329,12 @@ def _party_evidence(
         "nome_normalizado": normalize_company_name(clean_name),
         "papel": role,
         "eh_empresa": _looks_like_company(clean_name),
+        "documento": None,
+        "tipo_pessoa": (
+            "Pessoa jurídica"
+            if _looks_like_company(clean_name)
+            else None
+        ),
         "confianca": "alta",
         "fonte": "DJEN/CNJ",
         "data_documento": _safe_date(item),
@@ -301,9 +345,34 @@ def _party_evidence(
     }
 
 
+def _dedupe_parties(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            row.get("data_documento") or "",
+            str(row.get("comunicacao_id") or ""),
+        ),
+    )
+
+    by_name: dict[str, dict[str, Any]] = {}
+    for row in ordered:
+        normalized = (
+            row.get("nome_normalizado")
+            or _clean_spaces(row.get("nome")).upper()
+        )
+        if normalized:
+            by_name[str(normalized)] = row
+
+    return list(by_name.values())
+
+
 def _build_result(
     partes_re: list[dict[str, Any]],
+    partes_ativo: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    partes_re = _dedupe_parties(partes_re)
+    partes_ativo = _dedupe_parties(partes_ativo or [])
+
     empresas_by_name: dict[str, dict[str, Any]] = {}
 
     for row in partes_re:
@@ -311,7 +380,6 @@ def _build_result(
             continue
 
         normalized = row.get("nome_normalizado")
-
         if not normalized:
             continue
 
@@ -319,49 +387,85 @@ def _build_result(
 
     empresas_re = sorted(
         empresas_by_name.values(),
-        key=lambda row: str(
-            row.get("nome_normalizado") or ""
-        ),
+        key=lambda row: str(row.get("nome_normalizado") or ""),
     )
 
-    principal = (
-        empresas_re[0]
-        if len(empresas_re) == 1
-        else None
-    )
+    principal = empresas_re[0] if len(empresas_re) == 1 else None
 
     return {
-        "metodo": "destinatarios_djen_ou_rotulo_polo_reu",
+        "metodo": "destinatarios_djen_ou_rotulo_textual",
         "verificado": True,
         "verificado_em": datetime.now(timezone.utc).isoformat(),
+        # Formato usado pela ficha processual.
+        "ativo": partes_ativo,
+        "passivo": partes_re,
+        # Compatibilidade com snapshots anteriores.
+        "partes_ativo": partes_ativo,
         "partes_re": partes_re,
         "empresas_re": empresas_re,
         "empresa_re_principal": principal,
     }
 
 
-def extract_defendant_parties(
+def _extract_text_roles(
+    item: dict[str, Any],
+    patterns: tuple[tuple[str, re.Pattern[str]], ...],
+) -> list[dict[str, Any]]:
+    raw = _clean_spaces(item.get("texto"))
+    if not raw:
+        return []
+
+    header = raw[:MAX_HEADER_CHARS]
+    found: list[dict[str, Any]] = []
+
+    for role, pattern in patterns:
+        for match in pattern.finditer(header):
+            name = _clean_party_name(match.group("name"))
+            if not name or len(name) < 3 or len(name) > 300:
+                continue
+            found.append(
+                _party_evidence(
+                    name=name,
+                    role=role,
+                    item=item,
+                )
+            )
+
+    return found
+
+
+def extract_process_parties(
     communications: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Extrai empresas do polo réu com evidência explícita no DJEN/CNJ.
+    """Extrai polo ativo e polo passivo das comunicações públicas do DJEN.
 
-    Regras:
-    - exige rótulo de polo: RÉU, REQUERIDO ou RECLAMADO;
-    - remove metadados/cabeçalhos colados ao nome;
-    - CNPJ/CPF isolado não vira nome empresarial;
-    - órgão público não é classificado como empresa;
-    - sem inferência por nome solto.
+    Prioridade:
+    1. `destinatarios[].polo` estruturado pelo próprio DJEN;
+    2. rótulos textuais explícitos (Autor, Requerente, Réu, Requerido etc.).
+
+    Nenhuma parte é inventada quando a comunicação não expõe o nome.
     """
-    found: list[dict[str, Any]] = []
+    active: list[dict[str, Any]] = []
+    passive: list[dict[str, Any]] = []
 
     for item in communications or []:
         if not isinstance(item, dict):
             continue
 
-        # 1) Primeiro usa a estrutura oficial do próprio DJEN.
-        # Ex.: destinatarios=[{"nome": "BANCO ...", "polo": "P"}].
-        for name in _structured_passive_recipients(item):
-            found.append(
+        structured_active = _structured_active_recipients(item)
+        structured_passive = _structured_passive_recipients(item)
+
+        for name in structured_active:
+            active.append(
+                _party_evidence(
+                    name=name,
+                    role="polo_ativo_djen",
+                    item=item,
+                )
+            )
+
+        for name in structured_passive:
+            passive.append(
                 _party_evidence(
                     name=name,
                     role="polo_passivo_djen",
@@ -369,60 +473,22 @@ def extract_defendant_parties(
                 )
             )
 
-        # 2) Mantém o parser textual como fallback para comunicações antigas
-        # ou documentos em que o polo não venha estruturado.
-        raw = _clean_spaces(item.get("texto"))
-        if not raw:
-            continue
+        # Quando o DJEN já informa o polo de forma estruturada, ele é a fonte
+        # prioritária e evitamos duplicar nomes abreviados/qualificados do texto.
+        if not structured_active:
+            active.extend(_extract_text_roles(item, _ACTIVE_ROLE_PATTERNS))
 
-        header = raw[:MAX_HEADER_CHARS]
+        if not structured_passive:
+            passive.extend(_extract_text_roles(item, _PASSIVE_ROLE_PATTERNS))
 
-        for role, pattern in _ROLE_PATTERNS:
-            for match in pattern.finditer(header):
-                name = _clean_party_name(
-                    match.group("name")
-                )
+    return _build_result(passive, active)
 
-                if (
-                    not name
-                    or len(name) < 3
-                    or len(name) > 300
-                ):
-                    continue
 
-                found.append(
-                    _party_evidence(
-                        name=name,
-                        role=role,
-                        item=item,
-                    )
-                )
-
-    found.sort(
-        key=lambda row: (
-            row.get("data_documento") or "",
-            str(row.get("comunicacao_id") or ""),
-        )
-    )
-
-    by_key: dict[tuple[str, str], dict[str, Any]] = {}
-
-    for row in found:
-        normalized = (
-            row.get("nome_normalizado")
-            or _clean_spaces(row.get("nome")).upper()
-        )
-
-        by_key[
-            (
-                str(row.get("papel") or ""),
-                str(normalized),
-            )
-        ] = row
-
-    return _build_result(
-        list(by_key.values())
-    )
+def extract_defendant_parties(
+    communications: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compatibilidade: agora retorna o snapshot completo de partes."""
+    return extract_process_parties(communications)
 
 
 def sanitize_saved_party_snapshot(
@@ -432,40 +498,39 @@ def sanitize_saved_party_snapshot(
     if not isinstance(value, dict):
         return _build_result([])
 
-    rows = value.get("partes_re")
-    if not isinstance(rows, list):
-        rows = []
+    passive_rows = value.get("partes_re")
+    if not isinstance(passive_rows, list):
+        passive_rows = value.get("passivo")
+    if not isinstance(passive_rows, list):
+        passive_rows = []
 
-    cleaned_rows: list[dict[str, Any]] = []
-    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    active_rows = value.get("partes_ativo")
+    if not isinstance(active_rows, list):
+        active_rows = value.get("ativo")
+    if not isinstance(active_rows, list):
+        active_rows = []
 
-    for original in rows:
-        if not isinstance(original, dict):
-            continue
+    def clean(rows: list[Any]) -> list[dict[str, Any]]:
+        cleaned: list[dict[str, Any]] = []
+        for original in rows:
+            if not isinstance(original, dict):
+                continue
 
-        row = dict(original)
-        name = _clean_party_name(
-            str(row.get("nome") or "")
-        )
+            row = dict(original)
+            name = _clean_party_name(str(row.get("nome") or ""))
+            if not name:
+                continue
 
-        if not name:
-            continue
-
-        row["nome"] = name
-        row["nome_normalizado"] = normalize_company_name(name)
-        row["eh_empresa"] = _looks_like_company(name)
-
-        normalized = (
-            row.get("nome_normalizado")
-            or name.upper()
-        )
-
-        by_key[
-            (
-                str(row.get("papel") or ""),
-                str(normalized),
+            row["nome"] = name
+            row["nome_normalizado"] = normalize_company_name(name)
+            row["eh_empresa"] = _looks_like_company(name)
+            row.setdefault("documento", None)
+            row.setdefault(
+                "tipo_pessoa",
+                "Pessoa jurídica" if row["eh_empresa"] else None,
             )
-        ] = row
+            cleaned.append(row)
+        return cleaned
 
-    cleaned_rows.extend(by_key.values())
-    return _build_result(cleaned_rows)
+    return _build_result(clean(passive_rows), clean(active_rows))
+
