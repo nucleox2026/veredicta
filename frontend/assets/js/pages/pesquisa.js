@@ -4,8 +4,11 @@ const API = String(
   CONFIG.API_BASE_URL || "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
+const DJEN_PROXY =
+  "https://veredicta-djen-br.guilherme-moussalem.workers.dev";
+
 const SEARCH_STATE_KEY =
-  "veredicta_search_state_v4_health";
+  "veredicta_search_state_v5_djen_direct";
 
 const SELECTED_PROCESS_KEY =
   "veredicta_selected_process_v3";
@@ -713,6 +716,174 @@ function companyCellHtml(row) {
 }
 
 
+
+function normalizeProcessDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+
+function looksLikeCompanyName(value) {
+  const name = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!name) {
+    return false;
+  }
+
+  const upper = ` ${name.toUpperCase()} `;
+
+  const publicPrefixes = [
+    "UNIÃO",
+    "UNIAO",
+    "ESTADO DE ",
+    "MUNICÍPIO DE ",
+    "MUNICIPIO DE ",
+    "PREFEITURA ",
+    "SECRETARIA DE ",
+    "MINISTÉRIO ",
+    "MINISTERIO ",
+    "PROCURADORIA ",
+    "DEFENSORIA ",
+    "TRIBUNAL ",
+    "CÂMARA MUNICIPAL",
+    "CAMARA MUNICIPAL",
+    "ASSEMBLEIA LEGISLATIVA"
+  ];
+
+  if (
+    publicPrefixes.some((prefix) =>
+      name.toUpperCase().startsWith(prefix)
+    )
+  ) {
+    return false;
+  }
+
+  // Na listagem da pesquisa, o dado mais confiável é o próprio polo P
+  // estruturado pelo DJEN. Não exigimos LTDA/S.A. porque várias operadoras
+  // aparecem somente pela marca/razão abreviada. Excluímos apenas órgãos
+  // públicos e valores que sejam somente CPF/CNPJ.
+  const documentOnly = /^(?:CPF|CNPJ\s*:\s*)?[\d./-]+$/i;
+
+  if (documentOnly.test(name)) {
+    return false;
+  }
+
+  return true;
+}
+
+
+function extractCompaniesFromDjenPayload(payload) {
+  const names = [];
+  const seen = new Set();
+  let link = "";
+
+  const items = Array.isArray(payload && payload.items)
+    ? payload.items
+    : [];
+
+  items.forEach((communication) => {
+    if (!communication || typeof communication !== "object") {
+      return;
+    }
+
+    if (!link && communication.link) {
+      link = String(communication.link);
+    }
+
+    const recipients = Array.isArray(communication.destinatarios)
+      ? communication.destinatarios
+      : [];
+
+    recipients.forEach((recipient) => {
+      if (!recipient || typeof recipient !== "object") {
+        return;
+      }
+
+      const pole = String(recipient.polo || "")
+        .trim()
+        .toUpperCase();
+
+      if (
+        pole !== "P" &&
+        pole !== "PASSIVO" &&
+        pole !== "POLO PASSIVO" &&
+        pole !== "RÉU" &&
+        pole !== "REU" &&
+        pole !== "REQUERIDO" &&
+        pole !== "RECLAMADO"
+      ) {
+        return;
+      }
+
+      const name = String(recipient.nome || "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (!name || !looksLikeCompanyName(name)) {
+        return;
+      }
+
+      const key = name.toUpperCase();
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        names.push(name);
+      }
+    });
+  });
+
+  return { names, link };
+}
+
+
+async function lookupCompaniesDirectly(row) {
+  const numero = normalizeProcessDigits(row.numero_processo);
+
+  if (numero.length !== 20) {
+    return {
+      tribunal: row.tribunal,
+      numero_processo: row.numero_processo,
+      status: "error",
+      empresas_re: [],
+      fonte: null,
+      link: null
+    };
+  }
+
+  const url = new URL(`${DJEN_PROXY}/comunicacoes`);
+  url.searchParams.set("numeroProcesso", numero);
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json"
+    }
+  });
+
+  const payload = await parseJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      payload.erro ||
+      payload.message ||
+      `DJEN HTTP ${response.status}`
+    );
+  }
+
+  const extracted = extractCompaniesFromDjenPayload(payload);
+
+  return {
+    tribunal: row.tribunal,
+    numero_processo: row.numero_processo,
+    status: extracted.names.length ? "found" : "not_found",
+    empresas_re: extracted.names,
+    fonte: extracted.names.length ? "DJEN/CNJ" : null,
+    link: extracted.link || null
+  };
+}
+
+
 function updateCompanyRows(items) {
   const byKey = new Map();
 
@@ -794,65 +965,74 @@ async function enrichPendingCompanies() {
   renderRows();
 
   try {
-    const response = await fetch(
-      `${API}/api/v1/searches/companies`,
-      {
-        method: "POST",
-        headers: Object.assign(
-          {
-            "Content-Type": "application/json"
-          },
-          authHeaders()
-        ),
-        body: JSON.stringify({
-          items: batch.map((row) => ({
-            tribunal: row.tribunal,
-            numero_processo: row.numero_processo
-          }))
-        })
-      }
+    // Consulta diretamente o Worker no navegador. Isso elimina o ponto de
+    // falha Render -> DJEN e usa exatamente a rota que já foi validada.
+    const settled = await Promise.allSettled(
+      batch.map((row) => lookupCompaniesDirectly(row))
     );
 
-    const payload = await parseJsonResponse(response);
+    const directItems = [];
+    const failedRows = [];
 
-    if (!response.ok) {
-      throw new Error(
-        payload.detail ||
-        `Erro HTTP ${response.status}`
-      );
+    settled.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        directItems.push(result.value);
+      } else {
+        failedRows.push(batch[index]);
+        console.warn(
+          "Falha na consulta direta ao DJEN:",
+          result.reason
+        );
+      }
+    });
+
+    updateCompanyRows(directItems);
+
+    // Se o navegador não conseguir falar com o Worker por algum motivo,
+    // mantém o endpoint do backend como fallback apenas para essas linhas.
+    if (failedRows.length) {
+      try {
+        const response = await fetch(
+          `${API}/api/v1/searches/companies`,
+          {
+            method: "POST",
+            headers: Object.assign(
+              {
+                "Content-Type": "application/json"
+              },
+              authHeaders()
+            ),
+            body: JSON.stringify({
+              items: failedRows.map((row) => ({
+                tribunal: row.tribunal,
+                numero_processo: row.numero_processo
+              }))
+            })
+          }
+        );
+
+        const payload = await parseJsonResponse(response);
+
+        if (response.ok) {
+          updateCompanyRows(payload.items || []);
+        }
+      } catch (fallbackError) {
+        console.warn(
+          "Fallback do backend para empresas falhou:",
+          fallbackError
+        );
+      }
     }
 
-    updateCompanyRows(payload.items || []);
-
-    const returnedKeys = new Set(
-      (payload.items || []).map((item) => {
-        return `${item.tribunal || ""}:${item.numero_processo || ""}`;
-      })
-    );
-
     batch.forEach((row) => {
-      if (
-        !returnedKeys.has(rowKey(row)) &&
-        row.empresa_re_status === "loading"
-      ) {
+      if (row.empresa_re_status === "loading") {
         row.empresa_re_status = "error";
       }
     });
 
     renderRows();
     saveSearchState();
-
-    const retryAfter = Number(
-      payload.retry_after_seconds || 0
-    );
-
-    if (retryAfter > 0) {
-      scheduleCompanyEnrichment(
-        Math.max(retryAfter, 5) * 1000
-      );
-    } else {
-      scheduleCompanyEnrichment(250);
-    }
+    scheduleCompanyEnrichment(250);
   } catch (error) {
     console.warn(
       "Falha ao identificar empresas na pesquisa:",
