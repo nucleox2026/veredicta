@@ -37,6 +37,9 @@ DANO_MORAL_DIREITO_CONSUMIDOR = SubjectProfile(
 )
 
 
+DANO_MORAL_CODES: tuple[int, ...] = (9992, 10433, 7779)
+
+
 _PROFILES_BY_CODE = {
     DANO_MORAL_DIREITO_PUBLICO.primary_code:
         DANO_MORAL_DIREITO_PUBLICO,
@@ -64,45 +67,32 @@ def get_subject_profile(
 def build_subject_filter(
     subject_code: int | None,
 ) -> dict | None:
-    """Monta filtro exato pelo código selecionado na interface.
+    """Monta o filtro de assunto da Pesquisa.
 
-    A interface expõe separadamente os três ramos de dano moral.
-    Portanto, selecionar 9992, 10433 ou 7779 consulta somente aquele
-    código, sem unir automaticamente os demais ramos.
+    O código 0 representa o filtro único "Danos morais" da interface e
+    consulta os três códigos TPU usados pelo produto: Direito Público
+    (9992), Direito Civil (10433) e Direito do Consumidor (7779).
     """
-    if not subject_code:
+    if subject_code is None:
         return None
 
-    profile = get_subject_profile(subject_code)
+    code = int(subject_code)
 
-    code = (
-        profile.primary_code
-        if profile
-        else int(subject_code)
-    )
+    if code == 0:
+        return {
+            "terms": {
+                "assuntos.codigo": list(DANO_MORAL_CODES),
+            }
+        }
+
+    profile = get_subject_profile(code)
+    exact_code = profile.primary_code if profile else code
 
     return {
         "term": {
-            "assuntos.codigo": code,
+            "assuntos.codigo": exact_code,
         }
     }
-
-
-# Recorte nacional de saúde suplementar / planos de saúde.
-HEALTH_PLAN_SUBJECT_CODES: tuple[int, ...] = (
-    12482,  # Saúde suplementar
-    12486,  # Planos de saúde
-    12487,  # Fornecimento de medicamentos
-    12488,  # Reajuste contratual
-    12489,  # Tratamento médico-hospitalar
-    12490,  # Fornecimento de insumos
-    6233,   # Planos de Saúde (TPU histórica)
-    12222,  # Fornecimento de medicamentos (histórica)
-    12223,  # Tratamento médico-hospitalar (histórica)
-    12224,  # UTI/UCI - saúde suplementar (histórica)
-    12225,  # Reajuste contratual (histórica)
-)
-
 
 def build_health_plan_filter() -> dict:
     """Filtro público para saúde suplementar/planos de saúde.

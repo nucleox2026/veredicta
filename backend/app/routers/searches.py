@@ -43,7 +43,7 @@ class MultiTribunalSearchRequest(
 
         date_to: date
 
-        subject_code: int | None = 9992
+        subject_code: int | None = 0
 
         health_plans_only: bool = True
 
